@@ -7,12 +7,24 @@ class BlueAntClient
 
     public function __construct(string $baseUrl, string $token)
     {
+        if (trim($baseUrl) === '') {
+            throw new InvalidArgumentException('BLUEANT_BASE_URL ist nicht konfiguriert.');
+        }
+
+        if (trim($token) === '') {
+            throw new InvalidArgumentException('BLUEANT_TOKEN ist nicht konfiguriert.');
+        }
+
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->token = $token;
     }
 
     public function get(string $endpoint): array
     {
+        if (!function_exists('curl_init')) {
+            throw new RuntimeException('Die PHP-curl-Erweiterung ist nicht aktiviert.');
+        }
+
         $url = $this->baseUrl . '/' . ltrim($endpoint, '/');
 
         $ch = curl_init($url);

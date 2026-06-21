@@ -4,11 +4,6 @@ require_once __DIR__ . '/../src/BlueAntClient.php';
 
 $config = require __DIR__ . '/../config/config.php';
 
-$client = new BlueAntClient(
-    $config['blueant_base_url'],
-    $config['blueant_token']
-);
-
 $endpoint = '/v1/projects/kpi_descriptions';
 
 // Optionaler Suchfilter:
@@ -16,6 +11,11 @@ $endpoint = '/v1/projects/kpi_descriptions';
 $search = isset($_GET['search']) ? strtolower(trim($_GET['search'])) : '';
 
 try {
+    $client = new BlueAntClient(
+        $config['blueant_base_url'],
+        $config['blueant_token']
+    );
+
     $data = $client->get($endpoint);
 
     /*

@@ -1,0 +1,8 @@
+services:
+  blueant-dashboard:
+    build: .
+    ports:
+      - "${APP_PORT:-8000}:80"
+    env_file:
+      - .env
+    restart: unless-stopped
