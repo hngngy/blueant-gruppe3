@@ -4,14 +4,14 @@ require_once __DIR__ . '/../src/BlueAntClient.php';
 
 $config = require __DIR__ . '/../config/config.php';
 
-$client = new BlueAntClient(
-    $config['blueant_base_url'],
-    $config['blueant_token']
-);
-
 $projectId = isset($_GET['id']) ? (int) $_GET['id'] : 358571979;
 
 try {
+    $client = new BlueAntClient(
+        $config['blueant_base_url'],
+        $config['blueant_token']
+    );
+
     $data = $client->get('/v1/projects/' . $projectId . '/planningentries');
 
     $entries = $data['entries']
