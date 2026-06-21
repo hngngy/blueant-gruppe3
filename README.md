@@ -156,7 +156,3 @@ docker-compose.yml             Lokale Docker-Ausfuehrung
 - Optionale KI-Management-Summary mit festen Prompts und reproduzierbaren Parametern
 - Anzeige und einmalige Anpassung des KI-Prompts direkt vor dem KI-Aufruf
 
-## Noch offene Punkte laut Pflichtenheft
-
-- Verarbeitung mehrerer Portfolios in einem Lauf
-- Vollstaendige Dokumentation der individuellen Blue-Ant-Felder und Berechnungslogik
