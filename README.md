@@ -58,7 +58,60 @@ docker compose up --build
 ```
 
 Falls die lokale `.env` noch `gemini-api-key=...` enthält, wird dieser Wert aus Kompatibilitätsgründen ebenfalls gelesen. Empfohlen ist `GEMINI_API_KEY=...`.
-Die Prompts liegen fest in `config/prompts.php`. Für reproduzierbare Ergebnisse werden Temperatur `0` und ein fester Seed verwendet.
+Für reproduzierbare Ergebnisse werden Temperatur `0` und ein fester Seed verwendet.
+
+## KI-Prompts konfigurieren
+
+Die KI-Prompts werden über Umgebungsvariablen in der `.env`-Datei konfiguriert (nicht im Code!).
+
+### Standardprompt verwenden
+
+Ohne zusätzliche Konfiguration wird der Standardprompt aus `config/prompts/portfolio-management-summary.txt` verwendet.
+
+### Prompt anpassen
+
+Der Prompt wird in einer **einfachen Textdatei** gespeichert und kann direkt bearbeitet werden:
+
+1. **Datei öffnen:**
+   ```
+   config/prompts/portfolio-management-summary.txt
+   ```
+
+2. **Prompt bearbeiten:** Die Datei im Editor öffnen und ändern
+
+3. **Container neu starten:**
+   ```powershell
+   docker compose restart
+   ```
+
+### Alternativer Prompt-Pfad
+
+Wenn du einen anderen Pfad für den Prompt verwenden möchtest:
+
+```env
+# In .env:
+PROMPT_PORTFOLIO_MANAGEMENT_SUMMARY=path/to/my-custom-prompt.txt
+```
+
+Dann den Container neu starten.
+
+### Beispiel
+
+Standard-Prompt-Datei: `config/prompts/portfolio-management-summary.txt`
+
+```
+Du bist ein deutschsprachiger PMO-Analyst.
+Erstelle aus den gelieferten Portfolio- und Projektdaten eine reproduzierbare Management Summary.
+
+Regeln:
+- Antworte ausschliesslich auf Deutsch.
+- Nutze nur die gelieferten Daten.
+...
+```
+
+Einfach diese Datei bearbeiten und speichern. Nach Container-Neustart werden die Änderungen verwendet.
+
+
 
 ## Start mit Docker
 

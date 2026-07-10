@@ -4,6 +4,7 @@ require_once __DIR__ . '/../src/BlueAntClient.php';
 require_once __DIR__ . '/../src/AiJsonClient.php';
 require_once __DIR__ . '/../src/GeminiClient.php';
 require_once __DIR__ . '/../src/PortfolioAiAnalyzer.php';
+require_once __DIR__ . '/../src/ForecastAnalyzer.php';
 
 $config = require __DIR__ . '/../config/config.php';
 
@@ -131,11 +132,16 @@ if ($analysisStarted && count($selectedPortfolioProjects) > 0) {
     $prognoseMehraufwand = getKpiValue($kpis, 'PrognosisOvertime');
     $project['prognoseMehraufwand'] = $prognoseMehraufwand;
 
-    $customFields = $project['customFields'] ?? [];
+    $customFields = $projectDetails['customFields'] ?? $project['customFields'] ?? [];
+    $blueAntTrafficLight = extractBlueAntTrafficLight($projectDetails, $customFields);
+
+    $project['hasBlueAntTrafficLight'] = $blueAntTrafficLight['available'];
+    $project['blueAntTrafficLight'] = $blueAntTrafficLight['color'];
+    $project['blueAntTrafficLightReason'] = $blueAntTrafficLight['reason'];
 
     $gesamtstatusRaw = $customFields['832814142'] ?? null;
     $project['gesamtstatus'] = translateTrafficLight($gesamtstatusRaw);
-    $statusId = (int)($project['statusId'] ?? 0);
+    $statusId = (int)($projectDetails['statusId'] ?? $project['statusId'] ?? 0);
     $statusName = $statusMap[$statusId] ?? 'Unbekannter Status';
     $project['statusName'] = $statusName;
     $project['statusLabel'] = $statusId . ' - ' . $statusName;
@@ -150,6 +156,10 @@ if ($analysisStarted && count($selectedPortfolioProjects) > 0) {
     $project['milestonesCompleted'] = $milestones['completed'];
     $project['milestonesOpen'] = $milestones['open'];
     $project['milestonesOverdue'] = $milestones['overdue'];
+    $project['todosTotal'] = $milestones['todosTotal'];
+    $project['todosOpen'] = $milestones['todosOpen'];
+    $project['todosOverdue'] = $milestones['todosOverdue'];
+    $project['planningHasData'] = $milestones['hasPlanningData'];
 
     $overallRisk = $projectDetails['overallRisk'] ?? [];
     $project['overallRiskId'] = $overallRisk['overallRiskId'] ?? null;
@@ -159,8 +169,49 @@ if ($analysisStarted && count($selectedPortfolioProjects) > 0) {
     $project['isCritical'] = $criticalAnalysis['isCritical'];
     $project['criticalReasons'] = $criticalAnalysis['reasons'];
 
+    // Prognose berechnen
+    $forecast = ForecastAnalyzer::analyzeProjectForecast($project, $reportDate->format('Y-m-d'));
+    $project['forecast'] = $forecast;
+    $project['forecastText'] = ForecastAnalyzer::formatForecast($forecast);
+
+    $healthAnalysis = analyzeOwnProjectHealth($project);
+    $project['eigeneAmpel'] = $healthAnalysis['color'];
+    $project['eigeneAmpelBegruendung'] = $healthAnalysis['reason'];
+
     $portfolioProjectAnalyses[] = $project;
     }
+}
+
+$blueAntTrafficLightCounts = [
+    'Rot' => 0,
+    'Gelb' => 0,
+    'Grün' => 0,
+    'Nicht verfügbar' => 0,
+];
+
+$eigeneTrafficLightCounts = [
+    'Rot' => 0,
+    'Gelb' => 0,
+    'Grün' => 0,
+    'Grau' => 0,
+];
+
+foreach ($portfolioProjectAnalyses as $project) {
+    $blueAntColor = (string)($project['blueAntTrafficLight'] ?? 'Keine Angabe');
+
+    if (!empty($project['hasBlueAntTrafficLight']) && isset($blueAntTrafficLightCounts[$blueAntColor])) {
+        $blueAntTrafficLightCounts[$blueAntColor]++;
+    } else {
+        $blueAntTrafficLightCounts['Nicht verfügbar']++;
+    }
+
+    $eigeneColor = (string)($project['eigeneAmpel'] ?? 'Grau');
+
+    if (!isset($eigeneTrafficLightCounts[$eigeneColor])) {
+        $eigeneTrafficLightCounts[$eigeneColor] = 0;
+    }
+
+    $eigeneTrafficLightCounts[$eigeneColor]++;
 }
 
 $projectStatusCounts = [];
@@ -296,40 +347,73 @@ function translateTrafficLight($value): string
     };
 }
 
+function getTrafficLightClass(string $status): string
+{
+    return match ($status) {
+        'Rot' => 'status-red',
+        'Gelb' => 'status-yellow',
+        'Grün' => 'status-green',
+        'Grau' => 'status-unknown',
+        default => 'status-unknown',
+    };
+}
+
 function analyzeMilestones(array $entries, DateTimeImmutable $reportDate): array
 {
     $total = 0;
     $completed = 0;
     $open = 0;
     $overdue = 0;
+    $todosTotal = 0;
+    $todosOpen = 0;
+    $todosOverdue = 0;
 
     foreach ($entries as $entry) {
         $entryType = strtolower((string)($entry['entryType'] ?? ''));
-
-        if ($entryType !== 'milestone') {
-            continue;
-        }
-
-        $total++;
-
-        $progress = (float)($entry['progressActual'] ?? 0);
-        $endDateRaw = $entry['end'] ?? $entry['endWished'] ?? null;
-
+        $isMilestone = str_contains($entryType, 'milestone') || str_contains($entryType, 'meilenstein');
+        $progress = (float)($entry['progressActual'] ?? $entry['percentComplete'] ?? $entry['progress'] ?? 0);
+        $endDateRaw = $entry['end'] ?? $entry['endWished'] ?? $entry['endDate'] ?? $entry['targetDate'] ?? null;
         $isCompleted = $progress >= 100;
 
-        if ($isCompleted) {
-            $completed++;
+        if ($isMilestone) {
+            $total++;
+
+            if ($isCompleted) {
+                $completed++;
+                continue;
+            }
+
+            $open++;
+
+            if ($endDateRaw) {
+                try {
+                    $endDate = new DateTimeImmutable((string)$endDateRaw);
+
+                    if ($endDate < $reportDate) {
+                        $overdue++;
+                    }
+                } catch (Throwable $e) {
+                    // Ungültiges Datum ignorieren
+                }
+            }
+
             continue;
         }
 
-        $open++;
+        $todosTotal++;
+
+        if ($isCompleted) {
+            continue;
+        }
+
+        $todosOpen++;
 
         if ($endDateRaw) {
             try {
                 $endDate = new DateTimeImmutable((string)$endDateRaw);
 
                 if ($endDate < $reportDate) {
-                    $overdue++;
+                    $todosOverdue++;
                 }
             } catch (Throwable $e) {
                 // Ungültiges Datum ignorieren
@@ -342,6 +426,144 @@ function analyzeMilestones(array $entries, DateTimeImmutable $reportDate): array
         'completed' => $completed,
         'open' => $open,
         'overdue' => $overdue,
+        'todosTotal' => $todosTotal,
+        'todosOpen' => $todosOpen,
+        'todosOverdue' => $todosOverdue,
+        'hasPlanningData' => ($total + $todosTotal) > 0,
+    ];
+}
+
+function extractBlueAntTrafficLight(array $projectDetails, array $customFields): array
+{
+    $candidates = [];
+
+    foreach (['trafficLight', 'trafficlight', 'statusTrafficLight', 'statusAmpel', 'ampel', 'statusColor', 'trafficLightValue', 'stateColor'] as $fieldName) {
+        if (array_key_exists($fieldName, $projectDetails)) {
+            $candidates[] = $projectDetails[$fieldName];
+        }
+    }
+
+    foreach ($customFields as $fieldName => $value) {
+        $fieldNameLower = strtolower((string)$fieldName);
+
+        if (str_contains($fieldNameLower, 'traffic') || str_contains($fieldNameLower, 'ampel') || str_contains($fieldNameLower, 'status')) {
+            $candidates[] = $value;
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        $normalized = normalizeTrafficLightValue($candidate);
+
+        if ($normalized !== null) {
+            return [
+                'available' => true,
+                'color' => $normalized['color'],
+                'reason' => $normalized['reason'],
+            ];
+        }
+    }
+
+    return [
+        'available' => false,
+        'color' => 'Keine Angabe',
+        'reason' => 'Nicht verfügbar',
+    ];
+}
+
+function normalizeTrafficLightValue(mixed $value): ?array
+{
+    if ($value === null) {
+        return null;
+    }
+
+    if (is_array($value)) {
+        if (array_key_exists('value', $value)) {
+            return normalizeTrafficLightValue($value['value']);
+        }
+
+        if (array_key_exists('text', $value)) {
+            return normalizeTrafficLightValue($value['text']);
+        }
+
+        return null;
+    }
+
+    if (is_numeric($value)) {
+        return match ((int)$value) {
+            1 => ['color' => 'Rot', 'reason' => ''],
+            2 => ['color' => 'Gelb', 'reason' => ''],
+            3 => ['color' => 'Grün', 'reason' => ''],
+            default => null,
+        };
+    }
+
+    $normalized = strtolower(trim((string)$value));
+
+    return match ($normalized) {
+        '1', 'rot', 'red', 'r' => ['color' => 'Rot', 'reason' => ''],
+        '2', 'gelb', 'yellow', 'y' => ['color' => 'Gelb', 'reason' => ''],
+        '3', 'grün', 'grun', 'green', 'g' => ['color' => 'Grün', 'reason' => ''],
+        default => null,
+    };
+}
+
+function analyzeOwnProjectHealth(array $project): array
+{
+    if (empty($project['planningHasData'])) {
+        return [
+            'color' => 'Grau',
+            'reason' => 'Keine Planungsdaten verfügbar.',
+        ];
+    }
+
+    $milestonesOpen = (int)($project['milestonesOpen'] ?? 0);
+    $milestonesOverdue = (int)($project['milestonesOverdue'] ?? 0);
+    $todosOpen = (int)($project['todosOpen'] ?? 0);
+    $todosOverdue = (int)($project['todosOverdue'] ?? 0);
+    $progressDeviation = (float)($project['abweichungFortschritt'] ?? 0);
+
+    if ($milestonesOverdue > 0) {
+        return [
+            'color' => 'Rot',
+            'reason' => $milestonesOverdue . ' überfällige Meilensteine.',
+        ];
+    }
+
+    if ($todosOpen > 0) {
+        $overdueRate = $todosOpen > 0 ? ($todosOverdue / $todosOpen) * 100 : 0.0;
+
+        if ($overdueRate > 20) {
+            return [
+                'color' => 'Rot',
+                'reason' => $todosOverdue . ' offene To-dos sind überfällig (>20 %).',
+            ];
+        }
+
+        if ($todosOverdue > 0) {
+            return [
+                'color' => 'Gelb',
+                'reason' => $todosOverdue . ' offene To-dos sind überfällig.',
+            ];
+        }
+    }
+
+    if ($progressDeviation <= -20) {
+        return [
+            'color' => 'Gelb',
+            'reason' => 'Fortschritt liegt ' . formatDecimal(abs($progressDeviation)) . ' Prozentpunkte hinter dem Plan.',
+        ];
+    }
+
+    if (($milestonesOpen > 0 || $todosOpen > 0) && $progressDeviation <= -10) {
+        return [
+            'color' => 'Gelb',
+            'reason' => 'Es gibt offene Planungen und der Fortschritt ist leicht hinter dem Plan zurück.',
+        ];
+    }
+
+    return [
+        'color' => 'Grün',
+        'reason' => 'Keine offenen Verzögerungen bei Meilensteinen oder To-dos.',
     ];
 }
 
@@ -724,6 +946,11 @@ function renderList(array $items): void
         <?php if (count($portfolioProjects) === 0): ?>
             <p class="message message-info">Dieses Portfolio enthält keine Projekte.</p>
         <?php else: ?>
+            <div class="actions-card actions-inline">
+                <button type="button" id="selectAllBtn" class="button-secondary">Alle auswählen</button>
+                <button type="button" id="selectNoneBtn" class="button-secondary">Alle abwählen</button>
+            </div>
+
             <div class="project-list">
                 <?php foreach ($portfolioProjects as $project): ?>
                     <?php $projectId = (int)($project['id'] ?? 0); ?>
@@ -957,19 +1184,24 @@ function renderList(array $items): void
 </section>
 
 <h3>Statusampel-Zusammenfassung</h3>
+<p class="message message-info">Die eigene Ampel wird aus Meilensteinen, offenen To-dos und der Fortschrittsabweichung berechnet. Die BlueAnt-Ampel wird nur dann angezeigt, wenn die API für das Projekt einen echten Ampelwert liefert; in den aktuellen Live-Daten ist das nicht zuverlässig der Fall.</p>
 
 <table>
     <thead>
         <tr>
             <th>Statusampel</th>
-            <th>Anzahl Projekte</th>
+            <th>Anzahl (Blue Ant, wenn verfügbar)</th>
+            <th>Anzahl (Unsere Berechnung)</th>
         </tr>
     </thead>
     <tbody>
-        <?php foreach ($trafficLightCounts as $status => $count): ?>
+        <?php foreach ($blueAntTrafficLightCounts as $status => $count): ?>
             <tr>
                 <td><?= htmlspecialchars($status) ?></td>
                 <td><?= htmlspecialchars((string)$count) ?></td>
+                <td>
+                    <?= htmlspecialchars((string)($eigeneTrafficLightCounts[$status] ?? 0)) ?>
+                </td>
             </tr>
         <?php endforeach; ?>
     </tbody>
@@ -1026,6 +1258,7 @@ function renderList(array $items): void
                 <th>Projekt</th>
                 <th>Projektstatus</th>
                 <th>Statusampel</th>
+                <th>EIGENE AMPEL</th> 
                 <th>Fortschritt-Abweichung</th>
                 <th>Überfällige Meilensteine</th>
                 <th>Gesamtrisiko</th>
@@ -1042,6 +1275,23 @@ function renderList(array $items): void
                     </td>
                     <td><?= htmlspecialchars((string)($project['statusLabel'] ?? '-')) ?></td>
                     <td><?= htmlspecialchars((string)($project['gesamtstatus'] ?? 'Keine Angabe')) ?></td>
+
+                    <?php
+                        $eigeneFarbe = $project['eigeneAmpel'] ?? 'GRAU';
+                        $cssKlasse = ($eigeneFarbe === 'GRAU') ? 'status-unknown' : getTrafficLightClass($eigeneFarbe);
+                    ?>
+                    <td class="<?= $cssKlasse ?>">
+                        <strong>
+                            <?= $eigeneFarbe === 'Rot' ? '🔴 ' : '' ?>
+                            <?= $eigeneFarbe === 'Gelb' ? '🟡 ' : '' ?>
+                            <?= $eigeneFarbe === 'Grün' ? '🟢 ' : '' ?>
+                            <?= htmlspecialchars($eigeneFarbe) ?>
+                        </strong>
+                        <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                            <?= htmlspecialchars((string)($project['eigeneAmpelBegruendung'] ?? '')) ?>
+                        </span>
+                    </td>
+
                     <td><?= htmlspecialchars((string)($project['abweichungFortschritt'] ?? 0)) ?> %</td>
                     <td><?= htmlspecialchars((string)($project['milestonesOverdue'] ?? 0)) ?></td>
                     <td><?= htmlspecialchars((string)($project['riskAssessment'] ?: 'Keine Angabe')) ?></td>
@@ -1077,12 +1327,14 @@ function renderList(array $items): void
                 <th>Ist-Fortschritt</th>
                 <th>Fortschritt-Abweichung</th>
                 <th>Prognose Mehraufwand</th>
+                <th>Prognose (Aufwand/Zeitplan)</th>
                 <th>Meilensteine gesamt</th>
                 <th>Meilensteine offen</th>
                 <th>Meilensteine erledigt</th>
                 <th>Meilensteine überfällig</th>
-                <th>Status-Ampel</th>
-                <th>Status-Text</th>
+                <th>BlueAnt-Ampel</th>
+                <th>Eigene Ampel</th>
+                <th class="col-status-text">Status-Text</th>
                 <th>Kritisch?</th>
                 <th>Kritische Gründe</th>
             </tr>
@@ -1101,12 +1353,42 @@ function renderList(array $items): void
                   <td><?= htmlspecialchars((string)($project['istFortschritt'] ?? 0)) ?> %</td>
                   <td><?= htmlspecialchars((string)($project['abweichungFortschritt'] ?? 0)) ?> %</td>
                   <td><?= htmlspecialchars((string)($project['prognoseMehraufwand'] ?? 0)) ?></td>
+                  <td><?= htmlspecialchars((string)($project['forecastText'] ?? '-')) ?></td>
                   <td><?= htmlspecialchars((string)($project['milestonesTotal'] ?? 0)) ?></td>
                   <td><?= htmlspecialchars((string)($project['milestonesOpen'] ?? 0)) ?></td>
                   <td><?= htmlspecialchars((string)($project['milestonesCompleted'] ?? 0)) ?></td>
                   <td><?= htmlspecialchars((string)($project['milestonesOverdue'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['gesamtstatus'] ?? '-')) ?></td>
-                  <td><?= nl2br(htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe'))) ?></td>
+                  
+                  <td>
+                      <?php if (!empty($project['hasBlueAntTrafficLight'])): ?>
+                          <strong><?= htmlspecialchars((string)($project['blueAntTrafficLight'] ?? 'Keine Angabe')) ?></strong>
+                          <?php if (($project['blueAntTrafficLightReason'] ?? '') !== ''): ?>
+                              <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                                  <?= htmlspecialchars((string)$project['blueAntTrafficLightReason']) ?>
+                              </span>
+                          <?php endif; ?>
+                      <?php else: ?>
+                          <span class="status-unknown">Nicht verfügbar</span>
+                      <?php endif; ?>
+                  </td>
+                  
+                  <?php 
+                      $eigeneFarbe = $project['eigeneAmpel'] ?? 'GRAU'; 
+                      $cssKlasse = ($eigeneFarbe === 'GRAU') ? 'status-unknown' : getTrafficLightClass($eigeneFarbe);
+                  ?>
+                  <td class="<?= $cssKlasse ?>">
+                      <strong>
+                          <?= $eigeneFarbe === 'Rot' ? '🔴 ' : '' ?>
+                          <?= $eigeneFarbe === 'Gelb' ? '🟡 ' : '' ?>
+                          <?= $eigeneFarbe === 'Grün' ? '🟢 ' : '' ?>
+                          <?= htmlspecialchars($eigeneFarbe) ?>
+                      </strong>
+                      <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                          <?= htmlspecialchars((string)($project['eigeneAmpelBegruendung'] ?? '')) ?>
+                      </span>
+                  </td>
+
+                  <td class="col-status-text"><?= nl2br(htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe'))) ?></td>
                   <td><?= !empty($project['isCritical']) ? 'Ja' : 'Nein' ?></td>
                 <td>
                     <?php if (!empty($project['criticalReasons'])): ?>
@@ -1116,8 +1398,8 @@ function renderList(array $items): void
                         <?php endforeach; ?>
                      </ul>
                      <?php else: ?>
-        -
-                      <?php endif; ?>
+                        -
+                     <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -1137,5 +1419,31 @@ function renderList(array $items): void
 <?php endif; ?>
 
 </main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const selectNoneBtn = document.getElementById('selectNoneBtn');
+    
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.querySelectorAll('input[name="projectIds[]"]').forEach(checkbox => {
+                checkbox.checked = true;
+            });
+        });
+    }
+    
+    if (selectNoneBtn) {
+        selectNoneBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.querySelectorAll('input[name="projectIds[]"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+        });
+    }
+});
+</script>
+
 </body>
 </html>

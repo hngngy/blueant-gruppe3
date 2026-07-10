@@ -597,3 +597,16 @@ code {
         border-radius: 16px;
     }
 }
+
+/* Wider status text column to avoid tall rows */
+.col-status-text {
+    width: 75% !important;
+    max-width: 80% !important;
+    white-space: normal !important;
+}
+
+.col-status-text td,
+.col-status-text {
+    white-space: normal !important;
+    word-break: break-word;
+}
