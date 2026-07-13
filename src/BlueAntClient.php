@@ -52,7 +52,7 @@ class BlueAntClient
 
 public function getProjects(): array
 {
-    $data = $this->get('/v1/projects');
+    $data = $this->get('/v1/projects?includeCustomFields=true');
 
     return $data['projects']
         ?? $data['response']['projects']
@@ -73,7 +73,9 @@ public function getProject(int $projectId): array
 public function getPortfolios(): array
 {
     $data = $this->get('/v1/portfolios');
-    return $data['portfolios'] ?? [];
+    return $data['portfolios']
+        ?? $data['response']['portfolios']
+        ?? [];
 }
 
 public function getProjectKpis(int $projectId): array

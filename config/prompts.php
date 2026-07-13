@@ -7,31 +7,36 @@ Erstelle aus den gelieferten Portfolio- und Projektdaten eine reproduzierbare Ma
 
 Regeln:
 - Antworte ausschliesslich auf Deutsch.
-- Nutze nur die gelieferten Daten.
-- Erfinde keine Kennzahlen, Risiken oder Ursachen.
+- Nutze nur die gelieferten Daten und erfinde keine Kennzahlen, Risiken oder Ursachen.
 - Wenn eine Ursache nicht explizit in den Daten steht, schreibe "Ursache aus Daten nicht ableitbar".
 - Jeder JSON-Schluessel muss befuellt sein; keine leeren Strings und keine leeren Arrays.
-- Nenne keine Prozentwerte, Projektanzahlen oder Projektnamen, die nicht direkt in den Eingabedaten enthalten sind.
-- Halte die Reihenfolge der Abschnitte immer identisch.
-- Verwende eine sachliche Sprache für PMO und Management.
-- Gib ausschliesslich valides JSON ohne Markdown aus.
-- Nutze exakt die unten genannten JSON-Schluessel.
-- Keine deutschen Schluessel, kein zusaetzliches Wrapper-Objekt, keine Erklaertexte.
-- Verwende niemals den Schluessel "thought".
-- Beginne die Antwort direkt mit {"management_summary": ...}.
+- Halte die Reihenfolge der Abschnitte identisch.
+- Fasse statusMemo und subjectMemo strikt getrennt zusammen.
+- subject_summary beschreibt ausschliesslich den Projektgegenstand aus subjectMemo.
+- status_summary beschreibt ausschliesslich den aktuellen Zustand aus statusMemo.
+- Erzeuge genau einen Eintrag in project_summaries fuer jedes gelieferte Projekt.
+- Kennzeichne Prognosen als Schaetzung und uebernimm nur gelieferte Prognosedaten.
+- Gib ausschliesslich valides JSON ohne Markdown und ohne zusaetzliches Wrapper-Objekt aus.
+- Nutze exakt die unten genannten JSON-Schluessel und niemals den Schluessel "thought".
+- Beginne direkt mit {"management_summary": ...}.
 
 JSON-Schema:
 {
-  "management_summary": "Kurzer Gesamtüberblick in 2 bis 4 Sätzen.",
-  "portfolio_status": "Einordnung des Portfolios anhand Statusampel, Projektstatus und Fortschritt.",
+  "management_summary": "Kurzer Gesamtueberblick in 2 bis 4 Saetzen.",
+  "portfolio_status": "Einordnung anhand Statusampel, Projektstatus, Fortschritt und Meilensteinen.",
+  "subject_overview": "Portfolioübergreifende Zusammenfassung der Projektgegenstände.",
+  "status_overview": "Portfolioübergreifende Zusammenfassung der Statustexte.",
   "critical_findings": ["Wichtigste Auffaelligkeit 1", "Wichtigste Auffaelligkeit 2"],
   "recommended_actions": ["Konkrete Empfehlung 1", "Konkrete Empfehlung 2"],
   "project_summaries": [
     {
       "project_id": "ID",
       "project_name": "Name",
-      "summary": "Kurze Zusammenfassung des Projektstatus.",
-      "risk_note": "Hinweis zu Risiken oder 'Keine besonderen Risiken erkennbar'."
+      "summary": "Kurze Gesamteinordnung des Projekts.",
+      "subject_summary": "Zusammenfassung des Textfelds Gegenstand.",
+      "status_summary": "Zusammenfassung des Textfelds Status.",
+      "forecast_summary": "Einordnung der gelieferten Prognose oder 'Keine belastbare Prognose möglich'.",
+      "risk_note": "Risikohinweis oder 'Keine besonderen Risiken erkennbar'."
     }
   ]
 }

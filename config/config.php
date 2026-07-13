@@ -89,6 +89,9 @@ loadEnvFile(__DIR__ . '/../.env');
 return [
     'blueant_base_url' => envValue('BLUEANT_BASE_URL', 'https://dashboard-examples.blueant.cloud/rest'),
     'blueant_token' => envValue('BLUEANT_TOKEN'),
+    'traffic_light_field_id' => envValue('BLUEANT_TRAFFIC_LIGHT_FIELD_ID', '832814142'),
+    'traffic_light_field_name' => envValue('BLUEANT_TRAFFIC_LIGHT_FIELD_NAME', 'Status Gesamt'),
+    'critical_progress_deviation' => envFloat('CRITICAL_PROGRESS_DEVIATION', -20.0),
     'ai' => [
         'enabled' => envBool('AI_ENABLED', false),
         'provider' => 'gemini',
