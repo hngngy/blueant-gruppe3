@@ -632,11 +632,7 @@ function exportPortfolioReport(
                     <form method="post" class="prompt-form">
                         <?php renderPortfolioHiddenInputs($selectedPortfolioIds); renderReportDateHiddenInput($reportDate); renderProjectHiddenInputs($selectedProjectIds); ?>
                         <input type="hidden" name="runAi" value="1">
-                        <input type="hidden" id="defaultAiPromptValue" value="<?= htmlspecialchars($defaultAiPrompt, ENT_QUOTES) ?>">
-                        <div class="prompt-editor-header">
-                            <label for="aiPrompt">Verwendeter KI-Prompt</label>
-                            <button type="button" class="button-secondary prompt-reset-button" id="resetAiPromptBtn">Standardprompt wiederherstellen</button>
-                        </div>
+                        <label for="aiPrompt">Verwendeter KI-Prompt</label>
                         <textarea id="aiPrompt" name="aiPrompt" rows="12"><?= htmlspecialchars($activeAiPrompt) ?></textarea>
                         <button type="submit" class="button-ai">KI-Auswertung starten</button>
                     </form>
@@ -767,13 +763,6 @@ document.addEventListener('DOMContentLoaded', function () {
         updateCounter();
     }
 
-    const promptTextarea = document.getElementById('aiPrompt');
-    const defaultPromptValue = document.getElementById('defaultAiPromptValue');
-    document.getElementById('resetAiPromptBtn')?.addEventListener('click', () => {
-        if (!promptTextarea || !defaultPromptValue) return;
-        promptTextarea.value = defaultPromptValue.value;
-        promptTextarea.focus();
-    });
 });
 </script>
 </body>

@@ -304,19 +304,6 @@ button:active {
     gap: 10px;
 }
 
-.prompt-editor-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-}
-
-.prompt-reset-button {
-    min-height: 36px;
-    padding: 7px 12px;
-    font-size: 0.86rem;
-}
-
 .prompt-preview {
     margin-bottom: 18px;
     border: 1px solid var(--border);
@@ -710,10 +697,6 @@ code {
         grid-template-columns: 1fr;
     }
 
-    .prompt-editor-header {
-        align-items: stretch;
-        flex-direction: column;
-    }
 }
 
 .portfolio-selector {
