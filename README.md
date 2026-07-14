@@ -1,6 +1,6 @@
 # Blue Ant Portfolio-Dashboard
 
-Prototypisches PHP-Dashboard zur Auswertung von Projekt- und Portfoliodaten aus einer Blue-Ant-Testinstanz.
+PHP-Dashboard zur Auswertung von Projekt- und Portfoliodaten aus einer Blue-Ant-Testinstanz.
 
 ## Voraussetzungen
 
