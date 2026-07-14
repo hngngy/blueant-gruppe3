@@ -290,6 +290,22 @@ function renderList(array $items): void
     echo '</ul>';
 }
 
+function renderTrafficLight(string $status): void
+{
+    $normalized = in_array($status, ['Rot', 'Gelb', 'Grün'], true) ? $status : 'Keine Angabe';
+    $class = match ($normalized) {
+        'Rot' => 'red',
+        'Gelb' => 'yellow',
+        'Grün' => 'green',
+        default => 'unknown',
+    };
+
+    echo '<span class="traffic-badge traffic-badge-' . $class . '">';
+    echo '<span class="traffic-badge-dot" aria-hidden="true"></span>';
+    echo '<span>' . htmlspecialchars($normalized) . '</span>';
+    echo '</span>';
+}
+
 function exportPortfolioReport(
     string $format,
     array $portfolios,
@@ -369,7 +385,7 @@ function exportPortfolioReport(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Portfolio-Dashboard</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=<?= rawurlencode((string)(filemtime(__DIR__ . '/styles.css') ?: '1')) ?>">
 </head>
 <body>
 <main class="page-shell">
@@ -616,7 +632,11 @@ function exportPortfolioReport(
                     <form method="post" class="prompt-form">
                         <?php renderPortfolioHiddenInputs($selectedPortfolioIds); renderReportDateHiddenInput($reportDate); renderProjectHiddenInputs($selectedProjectIds); ?>
                         <input type="hidden" name="runAi" value="1">
-                        <label for="aiPrompt">Verwendeter KI-Prompt</label>
+                        <input type="hidden" id="defaultAiPromptValue" value="<?= htmlspecialchars($defaultAiPrompt, ENT_QUOTES) ?>">
+                        <div class="prompt-editor-header">
+                            <label for="aiPrompt">Verwendeter KI-Prompt</label>
+                            <button type="button" class="button-secondary prompt-reset-button" id="resetAiPromptBtn">Standardprompt wiederherstellen</button>
+                        </div>
                         <textarea id="aiPrompt" name="aiPrompt" rows="12"><?= htmlspecialchars($activeAiPrompt) ?></textarea>
                         <button type="submit" class="button-ai">KI-Auswertung starten</button>
                     </form>
@@ -646,7 +666,7 @@ function exportPortfolioReport(
                 <h3>Statusampel- und Projektstatus-Überblick</h3>
                 <p class="chart-note">Statusampel: <?= htmlspecialchars((string)$config['traffic_light_field_name']) ?>. Kritische Fortschrittsgrenze: <?= htmlspecialchars((string)abs((float)$config['critical_progress_deviation'])) ?> Prozentpunkte hinter Plan.</p>
                 <div class="overview-columns">
-                    <table><thead><tr><th>Statusampel</th><th>Projekte</th></tr></thead><tbody><?php foreach ($trafficLightCounts as $label => $count): ?><tr><td><?= htmlspecialchars($label) ?></td><td><?= $count ?></td></tr><?php endforeach; ?></tbody></table>
+                    <table><thead><tr><th>Statusampel</th><th>Projekte</th></tr></thead><tbody><?php foreach ($trafficLightCounts as $label => $count): ?><tr><td><?php renderTrafficLight((string)$label); ?></td><td><?= $count ?></td></tr><?php endforeach; ?></tbody></table>
                     <table><thead><tr><th>Projektstatus</th><th>Projekte</th></tr></thead><tbody><?php foreach ($projectStatusCounts as $label => $count): ?><tr><td><?= htmlspecialchars($label) ?></td><td><?= $count ?></td></tr><?php endforeach; ?></tbody></table>
                     <table><tbody><tr><th>Meilensteine gesamt</th><td><?= $milestoneSummary['total'] ?></td></tr><tr><th>Offen</th><td><?= $milestoneSummary['open'] ?></td></tr><tr><th>Erledigt</th><td><?= $milestoneSummary['completed'] ?></td></tr><tr><th>Überfällig</th><td><?= $milestoneSummary['overdue'] ?></td></tr></tbody></table>
                 </div>
@@ -656,7 +676,7 @@ function exportPortfolioReport(
                 <h3>Kritische Projekte</h3>
                 <?php if ($criticalProjects === []): ?><p>Keine kritischen Projekte nach den angezeigten Kriterien.</p><?php else: ?>
                     <div class="table-scroll"><table><thead><tr><th>Projekt</th><th>Ampel</th><th>Fortschritt-Abweichung</th><th>Überfällige Meilensteine</th><th>Gründe</th></tr></thead><tbody>
-                    <?php foreach ($criticalProjects as $project): ?><tr><td><?= htmlspecialchars((string)$project['name']) ?></td><td><?= htmlspecialchars((string)$project['gesamtstatus']) ?></td><td><?= htmlspecialchars((string)$project['abweichungFortschritt']) ?> %</td><td><?= (int)$project['milestonesOverdue'] ?></td><td><?php renderList($project['criticalReasons']); ?></td></tr><?php endforeach; ?>
+                    <?php foreach ($criticalProjects as $project): ?><tr><td><?= htmlspecialchars((string)$project['name']) ?></td><td><?php renderTrafficLight((string)$project['gesamtstatus']); ?></td><td><?= htmlspecialchars((string)$project['abweichungFortschritt']) ?> %</td><td><?= (int)$project['milestonesOverdue'] ?></td><td><?php renderList($project['criticalReasons']); ?></td></tr><?php endforeach; ?>
                     </tbody></table></div>
                 <?php endif; ?>
             </section>
@@ -668,7 +688,7 @@ function exportPortfolioReport(
                 </tr></thead><tbody><?php foreach ($portfolioProjectAnalyses as $project): ?><tr>
                     <td><?= htmlspecialchars((string)$project['number']) ?> – <?= htmlspecialchars((string)$project['name']) ?></td>
                     <td><?= htmlspecialchars(implode(', ', $project['portfolioNames'])) ?></td>
-                    <td><?= htmlspecialchars((string)$project['statusLabel']) ?></td><td><?= htmlspecialchars((string)$project['gesamtstatus']) ?></td>
+                    <td><?= htmlspecialchars((string)$project['statusLabel']) ?></td><td><?php renderTrafficLight((string)$project['gesamtstatus']); ?></td>
                     <td><?= htmlspecialchars((string)$project['planAufwand']) ?> / <?= htmlspecialchars((string)$project['istAufwand']) ?></td>
                     <td><?= htmlspecialchars((string)$project['planFortschritt']) ?> % / <?= htmlspecialchars((string)$project['istFortschritt']) ?> %</td>
                     <td><?= (int)$project['milestonesTotal'] ?> / <?= (int)$project['milestonesOpen'] ?> / <?= (int)$project['milestonesOverdue'] ?></td>
@@ -746,6 +766,14 @@ document.addEventListener('DOMContentLoaded', function () {
         boxes.forEach(box => box.addEventListener('change', updateCounter));
         updateCounter();
     }
+
+    const promptTextarea = document.getElementById('aiPrompt');
+    const defaultPromptValue = document.getElementById('defaultAiPromptValue');
+    document.getElementById('resetAiPromptBtn')?.addEventListener('click', () => {
+        if (!promptTextarea || !defaultPromptValue) return;
+        promptTextarea.value = defaultPromptValue.value;
+        promptTextarea.focus();
+    });
 });
 </script>
 </body>
