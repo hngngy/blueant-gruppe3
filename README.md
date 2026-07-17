@@ -1,6 +1,6 @@
 # Blue Ant Portfolio-Dashboard
 
-Prototypisches PHP-Dashboard zur Auswertung von Projekt- und Portfoliodaten aus einer Blue-Ant-Testinstanz.
+PHP-Dashboard zur Auswertung von Projekt- und Portfoliodaten aus einer Blue-Ant-Testinstanz.
 
 ## Voraussetzungen
 
@@ -156,10 +156,10 @@ http://localhost:8000/portfolio-dashboard.php
 
 ## Dashboard bedienen
 
-1. Portfolio auswählen.
-2. Stichtag im Datumsfeld setzen.
+1. Ein oder mehrere Portfolios auswählen.
+2. Den gewünschten Stichtag auswählen.
 3. `Projekte anzeigen` klicken.
-4. Ein oder mehrere Projekte per Checkbox auswählen.
+4. Ein oder mehrere Projekte per Checkbox oder über `Alle auswählen` auswählen.
 5. `Auswertung starten` klicken.
 6. Optional `CSV exportieren` oder `Text exportieren` klicken.
 7. Optional den angezeigten KI-Prompt prüfen oder anpassen.
@@ -172,8 +172,8 @@ Prompt-Anpassungen im Dashboard gelten nur für den aktuellen KI-Aufruf und änd
 Direkte Export-URLs:
 
 ```text
-http://localhost:8000/portfolio-dashboard.php?portfolioId=PORTFOLIO_ID&reportDate=2026-06-21&analysisStarted=1&projectIds[]=PROJEKT_ID&export=csv
-http://localhost:8000/portfolio-dashboard.php?portfolioId=PORTFOLIO_ID&reportDate=2026-06-21&analysisStarted=1&projectIds[]=PROJEKT_ID&projectIds[]=WEITERE_PROJEKT_ID&export=txt
+http://localhost:8000/portfolio-dashboard.php?portfolioIds[]=PORTFOLIO_ID&reportDate=2026-07-13&analysisStarted=1&projectIds[]=PROJEKT_ID&export=csv
+http://localhost:8000/portfolio-dashboard.php?portfolioIds[]=PORTFOLIO_ID&portfolioIds[]=WEITERE_PORTFOLIO_ID&reportDate=2026-07-13&analysisStarted=1&projectIds[]=PROJEKT_ID&projectIds[]=WEITERE_PROJEKT_ID&export=txt
 ```
 
 ## Projektstruktur
@@ -184,11 +184,13 @@ config/prompts.php             Feste KI-Prompts für reproduzierbare Reports
 src/BlueAntClient.php          HTTP-Client für Blue-Ant-REST-Endpunkte
 src/GeminiClient.php           Client für Gemini-KI-Auswertung
 src/PortfolioAiAnalyzer.php    Normalisierung und Prompt-Aufruf für Portfolio-Reports
+src/PortfolioAnalysis.php      Testbare Fachlogik für Texte, Meilensteine, Prognosen und Kritikalität
 public/portfolio-dashboard.php Dashboard und Auswertungslogik
 public/styles.css              Modernes Dashboard-Styling ohne Frontend-Abhängigkeiten
 public/api-test.php            Einfacher API-Test-Endpunkt
 public/kpis-test.php           Test für KPI-Beschreibungen
 public/milestone-test.php      Test für Meilenstein-Daten
+tests/run.php                  Automatisierte Fachlogik- und Feldzuordnungstests
 Dockerfile                     PHP-Apache-Container mit curl
 docker-compose.yml             Lokale Docker-Ausfuehrung
 .env.example                   Beispielkonfiguration
@@ -208,4 +210,32 @@ docker-compose.yml             Lokale Docker-Ausfuehrung
 - Export der Portfolio-Auswertung als CSV oder Textdatei
 - Optionale KI-Management-Summary mit festen Prompts und reproduzierbaren Parametern
 - Anzeige und einmalige Anpassung des KI-Prompts direkt vor dem KI-Aufruf
+- Auswahl eines oder mehrerer Portfolios; Projekte aus überlappenden Portfolios werden nur einmal ausgewertet
+- Bulk-Actions zum Auswählen oder Abwählen aller angezeigten Projekte mit live aktualisiertem Zähler
+- Korrekte Trennung der Blue-Ant-Memofelder `subjectMemo` (Gegenstand), `statusMemo` (Status) und `noteMemo` (Notiz)
+- Getrennte Zusammenfassungen für Gegenstand und Status pro Projekt sowie portfolioübergreifende KI-Überblicke
+- Konfigurierbare individuelle Statusampel (`BLUEANT_TRAFFIC_LIGHT_FIELD_ID`)
+- Transparente Termin- und Aufwandsprognose, die ausdrücklich als lineare Schätzung gekennzeichnet wird
+- Kritikalitätsprüfung anhand Statusampel, Fortschrittsabweichung, Meilensteinen und Statustext
+- Vollständige CSV- und Text-Exporte einschließlich Gegenstand, Status, Prognose und Kritikalitätsgründen
+
+## Fachliche Konfiguration
+
+```env
+BLUEANT_TRAFFIC_LIGHT_FIELD_ID=832814142
+BLUEANT_TRAFFIC_LIGHT_FIELD_NAME=Status Gesamt
+CRITICAL_PROGRESS_DEVIATION=-20
+```
+
+Der Stichtag ist frei wählbar und wird für Meilensteinbewertung, Prognose, KI-Kontext und Export verwendet. Die Blue-Ant-KPI-API liefert jedoch keine frei wählbaren historischen KPI-Snapshots: Plan-/Ist-Aufwand und Plan-/Ist-Fortschritt entsprechen deshalb weiterhin den beim Abruf gelieferten KPI-Werten und werden nicht rückwirkend für den gewählten Tag rekonstruiert.
+
+Die regelbasierte Zusammenfassung kürzt die gelieferten Texte nachvollziehbar und bleibt ohne KI verfügbar. Die optionale Gemini-Auswertung erstellt darüber hinaus inhaltlich verdichtete Gegenstands- und Statuszusammenfassungen.
+
+## Tests
+
+```powershell
+php tests/run.php
+```
+
+Die Tests prüfen insbesondere die Meilensteinbewertung, Kritikalitätsregeln, Prognoseberechnung und die korrekte Übergabe von `subjectMemo` als Projektgegenstand.
 
