@@ -1311,100 +1311,129 @@ function renderList(array $items): void
         </tbody>
     </table>
 <?php endif; ?>
-    <h3>Projekte dieses Portfolios</h3>
+    <details class="collapsible-table">
+        <summary>Projekte dieses Portfolios</summary>
 
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Projektnummer</th>
-                <th>Projektname</th>
-                <th>Projektstatus</th>
-                <th>Plan-Aufwand</th>
-                <th>Ist-Aufwand</th>
-                <th>Abweichung</th>
-                <th>Plan-Fortschritt</th>
-                <th>Ist-Fortschritt</th>
-                <th>Fortschritt-Abweichung</th>
-                <th>Prognose Mehraufwand</th>
-                <th>Prognose (Aufwand/Zeitplan)</th>
-                <th>Meilensteine gesamt</th>
-                <th>Meilensteine offen</th>
-                <th>Meilensteine erledigt</th>
-                <th>Meilensteine überfällig</th>
-                <th>BlueAnt-Ampel</th>
-                <th>Eigene Ampel</th>
-                <th class="col-status-text">Status-Text</th>
-                <th>Kritisch?</th>
-                <th>Kritische Gründe</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($portfolioProjectAnalyses as $project): ?>
-              <tr>
-                  <td><?= htmlspecialchars((string)($project['id'] ?? '-')) ?></td>
-                  <td><?= htmlspecialchars((string)($project['number'] ?? '-')) ?></td>
-                  <td><?= htmlspecialchars((string)($project['name'] ?? '-')) ?></td>
-                  <td><?= htmlspecialchars((string)($project['statusLabel'] ?? '-')) ?></td>
-                  <td><?= htmlspecialchars((string)($project['planAufwand'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['istAufwand'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['abweichungAufwand'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['planFortschritt'] ?? 0)) ?> %</td>
-                  <td><?= htmlspecialchars((string)($project['istFortschritt'] ?? 0)) ?> %</td>
-                  <td><?= htmlspecialchars((string)($project['abweichungFortschritt'] ?? 0)) ?> %</td>
-                  <td><?= htmlspecialchars((string)($project['prognoseMehraufwand'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['forecastText'] ?? '-')) ?></td>
-                  <td><?= htmlspecialchars((string)($project['milestonesTotal'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['milestonesOpen'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['milestonesCompleted'] ?? 0)) ?></td>
-                  <td><?= htmlspecialchars((string)($project['milestonesOverdue'] ?? 0)) ?></td>
-                  
-                  <td>
-                      <?php if (!empty($project['hasBlueAntTrafficLight'])): ?>
-                          <strong><?= htmlspecialchars((string)($project['blueAntTrafficLight'] ?? 'Keine Angabe')) ?></strong>
-                          <?php if (($project['blueAntTrafficLightReason'] ?? '') !== ''): ?>
-                              <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
-                                  <?= htmlspecialchars((string)$project['blueAntTrafficLightReason']) ?>
-                              </span>
-                          <?php endif; ?>
-                      <?php else: ?>
-                          <span class="status-unknown">Nicht verfügbar</span>
+<style>
+    /* 1. Wir zwingen die Tabelle dazu, die Spaltenbreiten strikt zu respektieren */
+    table {
+        table-layout: fixed !important;
+        width: 100% !important;
+        min-width: 1200px !important; /* Erhöhe diesen Wert, falls es immer noch quetscht */
+    }
+
+    /* 2. Jetzt greifen die Breiten für die Status-Zellen garantiert */
+    th.col-status-text, 
+    td.col-status-text {
+        width: 360px !important;
+        min-width: 360px !important;
+        max-width: 420px !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+    }
+</style>
+
+<table style="table-layout: fixed !important; width: 100%;">
+    <colgroup>
+        <col span="18">
+        <col class="col-status-text" width="520">
+        <col span="2">
+    </colgroup>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Projektnummer</th>
+            <th>Projektname</th>
+            <th>Projektstatus</th>
+            <th>Plan-Aufwand</th>
+            <th>Ist-Aufwand</th>
+            <th>Abweichung</th>
+            <th>Plan-Fortschritt</th>
+            <th>Ist-Fortschritt</th>
+            <th>Fortschritt-Abweichung</th>
+            <th>Prognose Mehraufwand</th>
+            <th>Prognose (Aufwand/Zeitplan)</th>
+            <th>Meilensteine gesamt</th>
+            <th>Meilensteine offen</th>
+            <th>Meilensteine erledigt</th>
+            <th>Meilensteine überfällig</th>
+            <th>BlueAnt-Ampel</th>
+            <th>Eigene Ampel</th>
+            <th style="width: 520px !important; min-width: 520px !important; max-width: 520px !important;">Status-Text</th>
+            <th>Kritisch?</th>
+            <th>Kritische Gründe</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php foreach ($portfolioProjectAnalyses as $project): ?>
+          <tr>
+              <td><?= htmlspecialchars((string)($project['id'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['number'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['name'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['statusLabel'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['planAufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['istAufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['abweichungAufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['planFortschritt'] ?? 0)) ?> %</td>
+              <td><?= htmlspecialchars((string)($project['istFortschritt'] ?? 0)) ?> %</td>
+              <td><?= htmlspecialchars((string)($project['abweichungFortschritt'] ?? 0)) ?> %</td>
+              <td><?= htmlspecialchars((string)($project['prognoseMehraufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['forecastText'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesTotal'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesOpen'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesCompleted'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesOverdue'] ?? 0)) ?></td>
+              
+              <td>
+                  <?php if (!empty($project['hasBlueAntTrafficLight'])): ?>
+                      <strong><?= htmlspecialchars((string)($project['blueAntTrafficLight'] ?? 'Keine Angabe')) ?></strong>
+                      <?php if (($project['blueAntTrafficLightReason'] ?? '') !== ''): ?>
+                          <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                              <?= htmlspecialchars((string)$project['blueAntTrafficLightReason']) ?>
+                          </span>
                       <?php endif; ?>
-                  </td>
-                  
-                  <?php 
-                      $eigeneFarbe = $project['eigeneAmpel'] ?? 'GRAU'; 
-                      $cssKlasse = ($eigeneFarbe === 'GRAU') ? 'status-unknown' : getTrafficLightClass($eigeneFarbe);
-                  ?>
-                  <td class="<?= $cssKlasse ?>">
-                      <strong>
-                          <?= $eigeneFarbe === 'Rot' ? '🔴 ' : '' ?>
-                          <?= $eigeneFarbe === 'Gelb' ? '🟡 ' : '' ?>
-                          <?= $eigeneFarbe === 'Grün' ? '🟢 ' : '' ?>
-                          <?= htmlspecialchars($eigeneFarbe) ?>
-                      </strong>
-                      <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
-                          <?= htmlspecialchars((string)($project['eigeneAmpelBegruendung'] ?? '')) ?>
-                      </span>
-                  </td>
+                  <?php else: ?>
+                      <span class="status-unknown">Nicht verfügbar</span>
+                  <?php endif; ?>
+              </td>
+              
+              <?php 
+                  $eigeneFarbe = $project['eigeneAmpel'] ?? 'GRAU'; 
+                  $cssKlasse = ($eigeneFarbe === 'GRAU') ? 'status-unknown' : getTrafficLightClass($eigeneFarbe);
+              ?>
+              <td class="<?= $cssKlasse ?>">
+                  <strong>
+                      <?= $eigeneFarbe === 'Rot' ? '🔴 ' : '' ?>
+                      <?= $eigeneFarbe === 'Gelb' ? '🟡 ' : '' ?>
+                      <?= $eigeneFarbe === 'Grün' ? '🟢 ' : '' ?>
+                      <?= htmlspecialchars($eigeneFarbe) ?>
+                  </strong>
+                  <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                      <?= htmlspecialchars((string)($project['eigeneAmpelBegruendung'] ?? '')) ?>
+                  </span>
+              </td>
 
-                  <td class="col-status-text"><?= nl2br(htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe'))) ?></td>
-                  <td><?= !empty($project['isCritical']) ? 'Ja' : 'Nein' ?></td>
-                <td>
-                    <?php if (!empty($project['criticalReasons'])): ?>
-                     <ul>
-                        <?php foreach ($project['criticalReasons'] as $reason): ?>
-                         <li><?= htmlspecialchars($reason) ?></li>
-                        <?php endforeach; ?>
-                     </ul>
-                     <?php else: ?>
-                        -
-                     <?php endif; ?>
-                </td>
-              </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
+              <!-- HIER: Deine TD-Zelle hat die Klasse bereits, das passt! -->
+<!-- Ersetze dein altes TD mit diesem hier: -->
+            <td class="col-status-text" style="width: 520px !important; min-width: 520px !important; max-width: 520px !important; white-space: normal !important; word-break: break-word !important; overflow-wrap: anywhere;">
+            <?= nl2br(htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe'))) ?>
+            </td>     
+                     <td><?= !empty($project['isCritical']) ? 'Ja' : 'Nein' ?></td>
+            <td>
+                <?php if (!empty($project['criticalReasons'])): ?>
+                 <ul>
+                    <?php foreach ($project['criticalReasons'] as $reason): ?>
+                     <li><?= htmlspecialchars($reason) ?></li>
+                    <?php endforeach; ?>
+                 </ul>
+                 <?php else: ?>
+                    -
+                 <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
 
 <?php endif; ?>
 

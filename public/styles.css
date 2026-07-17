@@ -526,9 +526,10 @@ button:active {
 }
 
 table {
-    display: block;
-    width: 100%;
-    overflow-x: auto;
+    display: table; /* Zwingt den Browser wieder zum echten Tabellen-Layout */
+    table-layout: fixed; /* Macht Breitenangaben verbindlich */
+    width: max-content; /* Verhindert, dass die Tabelle auf Bildschirmbreite gequetscht wird */
+    min-width: 100%;
     border: 1px solid var(--border) !important;
     border-collapse: separate;
     border-spacing: 0;
@@ -536,7 +537,6 @@ table {
     background: var(--surface);
     box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
 }
-
 thead {
     background: #eef4ff;
 }
@@ -599,14 +599,65 @@ code {
 }
 
 /* Wider status text column to avoid tall rows */
-.col-status-text {
-    width: 75% !important;
-    max-width: 80% !important;
+/* Make column width explicit and enforce on <col> elements too */
+col.col-status-text,
+.col-status-text,
+th.col-status-text,
+td.col-status-text {
+    width: 520px !important;
+    min-width: 520px !important;
+    max-width: 520px !important;
     white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
 }
 
-.col-status-text td,
-.col-status-text {
-    white-space: normal !important;
-    word-break: break-word;
+.collapsible-table {
+    margin-bottom: 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow-x: auto;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
 }
+
+.collapsible-table table {
+    table-layout: fixed;
+    /* keep the table wide but avoid forcing an extremely large minimum */
+    min-width: 1100px;
+}
+
+.collapsible-table summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 16px 18px;
+    font-weight: 800;
+    color: var(--text);
+    background: #eef4ff;
+    border: none;
+    cursor: pointer;
+    list-style: none;
+}
+
+.collapsible-table summary::-webkit-details-marker {
+    display: none;
+}
+
+.collapsible-table summary::before {
+    content: '▶';
+    display: inline-block;
+    margin-right: 10px;
+    transition: transform 0.2s ease;
+}
+
+.collapsible-table[open] summary::before {
+    transform: rotate(90deg);
+}
+
+.collapsible-table table {
+    margin: 0;
+    box-shadow: none;
+}
+
