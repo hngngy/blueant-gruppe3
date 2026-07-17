@@ -4,6 +4,7 @@ require_once __DIR__ . '/../src/BlueAntClient.php';
 require_once __DIR__ . '/../src/AiJsonClient.php';
 require_once __DIR__ . '/../src/GeminiClient.php';
 require_once __DIR__ . '/../src/PortfolioAiAnalyzer.php';
+require_once __DIR__ . '/../src/ForecastAnalyzer.php';
 require_once __DIR__ . '/../src/PortfolioAnalysis.php';
 
 $config = require __DIR__ . '/../config/config.php';
@@ -100,51 +101,106 @@ if ($analysisStarted && $selectedPortfolioProjects !== []) {
             continue;
         }
 
-        $kpis = $client->getProjectKpis($projectId);
-        $details = $client->getProject($projectId);
-        $project = array_merge($project, $details);
-        $project['portfolioNames'] = array_values(array_unique($projectPortfolioNames[$projectId] ?? []));
+    $kpis = $client->getProjectKpis($projectId);
+    $projectDetails = $client->getProject($projectId);
 
-        $project['planAufwand'] = getKpiValue($kpis, 'WorkTotalPlan');
-        $project['istAufwand'] = getKpiValue($kpis, 'WorkTotalActual');
-        $project['abweichungAufwand'] = $project['istAufwand'] - $project['planAufwand'];
-        $project['planFortschritt'] = getKpiValue($kpis, 'DevelopmentPlanProgress');
-        $project['istFortschritt'] = getKpiValue($kpis, 'SubjectiveProgress');
-        $project['abweichungFortschritt'] = $project['istFortschritt'] - $project['planFortschritt'];
-        $project['prognoseMehraufwand'] = getKpiValue($kpis, 'PrognosisOvertime');
+    $planAufwand = getKpiValue($kpis, 'WorkTotalPlan');
+    $istAufwand = getKpiValue($kpis, 'WorkTotalActual');
+    $abweichung = $istAufwand - $planAufwand;
+    $project['planAufwand'] = $planAufwand;
+    $project['istAufwand'] = $istAufwand;
+    $project['abweichungAufwand'] = $abweichung;
 
-        $customFields = is_array($details['customFields'] ?? null)
-            ? $details['customFields']
-            : (is_array($project['customFields'] ?? null) ? $project['customFields'] : []);
-        $trafficLightValue = $customFields[(string)$config['traffic_light_field_id']] ?? null;
-        $project['gesamtstatus'] = translateTrafficLight($trafficLightValue);
+    $planFortschritt = getKpiValue($kpis, 'DevelopmentPlanProgress');
+    $istFortschritt = getKpiValue($kpis, 'SubjectiveProgress');
+    $abweichungFortschritt = $istFortschritt - $planFortschritt;
+    $project['planFortschritt'] = $planFortschritt;
+    $project['istFortschritt'] = $istFortschritt;
+    $project['abweichungFortschritt'] = $abweichungFortschritt;
 
-        $statusId = (int)($details['statusId'] ?? $project['statusId'] ?? 0);
-        $project['statusId'] = $statusId;
-        $project['statusName'] = $statusMap[$statusId] ?? 'Unbekannter Status';
-        $project['statusLabel'] = $statusId . ' - ' . $project['statusName'];
-        $project['statusMemo'] = cleanMemo((string)($details['statusMemo'] ?? ''));
-        $project['subjectMemo'] = cleanMemo((string)($details['subjectMemo'] ?? ''));
-        $project['statusSummary'] = PortfolioAnalysis::summarizeText($project['statusMemo']);
-        $project['subjectSummary'] = PortfolioAnalysis::summarizeText($project['subjectMemo']);
+    $prognoseMehraufwand = getKpiValue($kpis, 'PrognosisOvertime');
+    $project['prognoseMehraufwand'] = $prognoseMehraufwand;
 
-        $milestones = PortfolioAnalysis::analyzeMilestones($client->getPlanningEntries($projectId), $reportDate);
-        foreach ($milestones as $key => $value) {
-            $project['milestones' . ucfirst($key)] = $value;
-        }
+    $customFields = $projectDetails['customFields'] ?? $project['customFields'] ?? [];
+    $blueAntTrafficLight = extractBlueAntTrafficLight($projectDetails, $customFields);
+
+    $project['hasBlueAntTrafficLight'] = $blueAntTrafficLight['available'];
+    $project['blueAntTrafficLight'] = $blueAntTrafficLight['color'];
+    $project['blueAntTrafficLightReason'] = $blueAntTrafficLight['reason'];
+
+    $gesamtstatusRaw = $customFields['832814142'] ?? null;
+    $project['gesamtstatus'] = translateTrafficLight($gesamtstatusRaw);
+    $statusId = (int)($projectDetails['statusId'] ?? $project['statusId'] ?? 0);
+    $statusName = $statusMap[$statusId] ?? 'Unbekannter Status';
+    $project['statusName'] = $statusName;
+    $project['statusLabel'] = $statusId . ' - ' . $statusName;
+
+    $project['statusMemo'] = trim(strip_tags((string)($projectDetails['statusMemo'] ?? '')));
+    $project['noteMemo'] = trim(strip_tags((string)($projectDetails['noteMemo'] ?? '')));
+
+    $planningEntries = $client->getPlanningEntries($projectId);
+    $milestones = analyzeMilestones($planningEntries, $reportDate);
+
+    $project['milestonesTotal'] = $milestones['total'];
+    $project['milestonesCompleted'] = $milestones['completed'];
+    $project['milestonesOpen'] = $milestones['open'];
+    $project['milestonesOverdue'] = $milestones['overdue'];
+    $project['todosTotal'] = $milestones['todosTotal'];
+    $project['todosOpen'] = $milestones['todosOpen'];
+    $project['todosOverdue'] = $milestones['todosOverdue'];
+    $project['planningHasData'] = $milestones['hasPlanningData'];
+
+    $overallRisk = $projectDetails['overallRisk'] ?? [];
+    $project['overallRiskId'] = $overallRisk['overallRiskId'] ?? null;
+    $project['riskAssessment'] = trim(strip_tags((string)($overallRisk['riskAssessment'] ?? '')));
 
         $forecast = PortfolioAnalysis::forecast($project, $reportDate);
         $project['forecast'] = $forecast;
         $project['forecastText'] = PortfolioAnalysis::formatForecast($forecast);
 
-        $critical = PortfolioAnalysis::analyzeCriticalProject(
-            $project,
-            (float)$config['critical_progress_deviation']
-        );
-        $project['isCritical'] = $critical['isCritical'];
-        $project['criticalReasons'] = $critical['reasons'];
-        $portfolioProjectAnalyses[] = $project;
+    // Prognose berechnen
+    $forecast = ForecastAnalyzer::analyzeProjectForecast($project, $reportDate->format('Y-m-d'));
+    $project['forecast'] = $forecast;
+    $project['forecastText'] = ForecastAnalyzer::formatForecast($forecast);
+
+    $healthAnalysis = analyzeOwnProjectHealth($project);
+    $project['eigeneAmpel'] = $healthAnalysis['color'];
+    $project['eigeneAmpelBegruendung'] = $healthAnalysis['reason'];
+
+    $portfolioProjectAnalyses[] = $project;
     }
+}
+
+$blueAntTrafficLightCounts = [
+    'Rot' => 0,
+    'Gelb' => 0,
+    'Grün' => 0,
+    'Nicht verfügbar' => 0,
+];
+
+$eigeneTrafficLightCounts = [
+    'Rot' => 0,
+    'Gelb' => 0,
+    'Grün' => 0,
+    'Grau' => 0,
+];
+
+foreach ($portfolioProjectAnalyses as $project) {
+    $blueAntColor = (string)($project['blueAntTrafficLight'] ?? 'Keine Angabe');
+
+    if (!empty($project['hasBlueAntTrafficLight']) && isset($blueAntTrafficLightCounts[$blueAntColor])) {
+        $blueAntTrafficLightCounts[$blueAntColor]++;
+    } else {
+        $blueAntTrafficLightCounts['Nicht verfügbar']++;
+    }
+
+    $eigeneColor = (string)($project['eigeneAmpel'] ?? 'Grau');
+
+    if (!isset($eigeneTrafficLightCounts[$eigeneColor])) {
+        $eigeneTrafficLightCounts[$eigeneColor] = 0;
+    }
+
+    $eigeneTrafficLightCounts[$eigeneColor]++;
 }
 
 $projectStatusCounts = [];
@@ -237,31 +293,221 @@ function translateTrafficLight($value): string
     };
 }
 
-function cleanMemo(string $text): string
+function getTrafficLightClass(string $status): string
 {
-    return trim(preg_replace('/\s+/u', ' ', strip_tags($text)) ?? '');
+    return match ($status) {
+        'Rot' => 'status-red',
+        'Gelb' => 'status-yellow',
+        'Grün' => 'status-green',
+        'Grau' => 'status-unknown',
+        default => 'status-unknown',
+    };
 }
 
-function percentage(float $value, float $total): float
+function analyzeMilestones(array $entries, DateTimeImmutable $reportDate): array
 {
-    return $total <= 0 ? 0.0 : round(($value / $total) * 100, 1);
-}
+    $total = 0;
+    $completed = 0;
+    $open = 0;
+    $overdue = 0;
+    $todosTotal = 0;
+    $todosOpen = 0;
+    $todosOverdue = 0;
 
-function barWidth(float $value, float $max): string
-{
-    return number_format(percentage(max(0.0, $value), $max), 1, '.', '');
-}
+    foreach ($entries as $entry) {
+        $entryType = strtolower((string)($entry['entryType'] ?? ''));
+        $isMilestone = str_contains($entryType, 'milestone') || str_contains($entryType, 'meilenstein');
+        $progress = (float)($entry['progressActual'] ?? $entry['percentComplete'] ?? $entry['progress'] ?? 0);
+        $endDateRaw = $entry['end'] ?? $entry['endWished'] ?? $entry['endDate'] ?? $entry['targetDate'] ?? null;
+        $isCompleted = $progress >= 100;
 
-function formatDecimal(float $value): string
-{
-    return number_format($value, 1, ',', '.');
-}
+        if ($isMilestone) {
+            $total++;
 
-function renderPortfolioHiddenInputs(array $portfolioIds): void
-{
-    foreach ($portfolioIds as $portfolioId) {
-        echo '<input type="hidden" name="portfolioIds[]" value="' . htmlspecialchars((string)$portfolioId) . '">';
+            if ($isCompleted) {
+                $completed++;
+                continue;
+            }
+
+            $open++;
+
+            if ($endDateRaw) {
+                try {
+                    $endDate = new DateTimeImmutable((string)$endDateRaw);
+
+                    if ($endDate < $reportDate) {
+                        $overdue++;
+                    }
+                } catch (Throwable $e) {
+                    // Ungültiges Datum ignorieren
+                }
+            }
+
+            continue;
+        }
+
+        $todosTotal++;
+
+        if ($isCompleted) {
+            continue;
+        }
+
+        $todosOpen++;
+
+
+                if ($endDate < $reportDate) {
+                    $todosOverdue++;
+                }
+            } catch (Throwable $e) {
+                // Ungültiges Datum ignorieren
+            }
+        }
     }
+
+    return [
+        'total' => $total,
+        'completed' => $completed,
+        'open' => $open,
+        'overdue' => $overdue,
+        'todosTotal' => $todosTotal,
+        'todosOpen' => $todosOpen,
+        'todosOverdue' => $todosOverdue,
+        'hasPlanningData' => ($total + $todosTotal) > 0,
+    ];
+}
+
+function extractBlueAntTrafficLight(array $projectDetails, array $customFields): array
+{
+    $candidates = [];
+
+    foreach (['trafficLight', 'trafficlight', 'statusTrafficLight', 'statusAmpel', 'ampel', 'statusColor', 'trafficLightValue', 'stateColor'] as $fieldName) {
+        if (array_key_exists($fieldName, $projectDetails)) {
+            $candidates[] = $projectDetails[$fieldName];
+        }
+    }
+
+    foreach ($customFields as $fieldName => $value) {
+        $fieldNameLower = strtolower((string)$fieldName);
+
+        if (str_contains($fieldNameLower, 'traffic') || str_contains($fieldNameLower, 'ampel') || str_contains($fieldNameLower, 'status')) {
+            $candidates[] = $value;
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        $normalized = normalizeTrafficLightValue($candidate);
+
+        if ($normalized !== null) {
+            return [
+                'available' => true,
+                'color' => $normalized['color'],
+                'reason' => $normalized['reason'],
+            ];
+        }
+    }
+
+    return [
+        'available' => false,
+        'color' => 'Keine Angabe',
+        'reason' => 'Nicht verfügbar',
+    ];
+}
+
+function normalizeTrafficLightValue(mixed $value): ?array
+{
+    if ($value === null) {
+        return null;
+    }
+
+    if (is_array($value)) {
+        if (array_key_exists('value', $value)) {
+            return normalizeTrafficLightValue($value['value']);
+        }
+
+        if (array_key_exists('text', $value)) {
+            return normalizeTrafficLightValue($value['text']);
+        }
+
+        return null;
+    }
+
+    if (is_numeric($value)) {
+        return match ((int)$value) {
+            1 => ['color' => 'Rot', 'reason' => ''],
+            2 => ['color' => 'Gelb', 'reason' => ''],
+            3 => ['color' => 'Grün', 'reason' => ''],
+            default => null,
+        };
+    }
+
+    $normalized = strtolower(trim((string)$value));
+
+    return match ($normalized) {
+        '1', 'rot', 'red', 'r' => ['color' => 'Rot', 'reason' => ''],
+        '2', 'gelb', 'yellow', 'y' => ['color' => 'Gelb', 'reason' => ''],
+        '3', 'grün', 'grun', 'green', 'g' => ['color' => 'Grün', 'reason' => ''],
+        default => null,
+    };
+}
+
+function analyzeOwnProjectHealth(array $project): array
+{
+    if (empty($project['planningHasData'])) {
+        return [
+            'color' => 'Grau',
+            'reason' => 'Keine Planungsdaten verfügbar.',
+        ];
+    }
+
+    $milestonesOpen = (int)($project['milestonesOpen'] ?? 0);
+    $milestonesOverdue = (int)($project['milestonesOverdue'] ?? 0);
+    $todosOpen = (int)($project['todosOpen'] ?? 0);
+    $todosOverdue = (int)($project['todosOverdue'] ?? 0);
+    $progressDeviation = (float)($project['abweichungFortschritt'] ?? 0);
+
+    if ($milestonesOverdue > 0) {
+        return [
+            'color' => 'Rot',
+            'reason' => $milestonesOverdue . ' überfällige Meilensteine.',
+        ];
+    }
+
+    if ($todosOpen > 0) {
+        $overdueRate = $todosOpen > 0 ? ($todosOverdue / $todosOpen) * 100 : 0.0;
+
+        if ($overdueRate > 20) {
+            return [
+                'color' => 'Rot',
+                'reason' => $todosOverdue . ' offene To-dos sind überfällig (>20 %).',
+            ];
+        }
+
+        if ($todosOverdue > 0) {
+            return [
+                'color' => 'Gelb',
+                'reason' => $todosOverdue . ' offene To-dos sind überfällig.',
+            ];
+        }
+    }
+
+    if ($progressDeviation <= -20) {
+        return [
+            'color' => 'Gelb',
+            'reason' => 'Fortschritt liegt ' . formatDecimal(abs($progressDeviation)) . ' Prozentpunkte hinter dem Plan.',
+        ];
+    }
+
+    if (($milestonesOpen > 0 || $todosOpen > 0) && $progressDeviation <= -10) {
+        return [
+            'color' => 'Gelb',
+            'reason' => 'Es gibt offene Planungen und der Fortschritt ist leicht hinter dem Plan zurück.',
+        ];
+    }
+
+    return [
+        'color' => 'Grün',
+        'reason' => 'Keine offenen Verzögerungen bei Meilensteinen oder To-dos.',
+    ];
 }
 
 function renderProjectHiddenInputs(array $projectIds): void
@@ -389,44 +635,111 @@ function exportPortfolioReport(
 </head>
 <body>
 <main class="page-shell">
-    <header class="hero">
-        <h1>Portfolio-Dashboard</h1>
-        <p>Portfolios und Projekte auswählen, aktuellen Datenstand analysieren und als Management-Auswertung exportieren.</p>
-    </header>
+<header class="hero">
+    <h1>Portfolio-Dashboard</h1>
+    <p>Wähle Portfolio, Stichtag und Projekte aus, um eine reproduzierbare Management-Auswertung zu erstellen.</p>
+</header>
 
-    <?php if ($error): ?><p class="message message-danger">Fehler: <?= htmlspecialchars($error) ?></p><?php endif; ?>
+<?php if ($error): ?>
+    <p class="message message-danger">Fehler: <?= htmlspecialchars($error) ?></p>
+<?php endif; ?>
 
-    <form method="get" class="control-card portfolio-selector">
-        <div class="field portfolio-multiselect" id="portfolioMultiselect">
-            <label id="portfolioDropdownLabel">Ein oder mehrere Portfolios auswählen</label>
-            <button
-                type="button"
-                class="portfolio-dropdown-trigger"
-                id="portfolioDropdownTrigger"
-                aria-haspopup="true"
-                aria-expanded="false"
-                aria-labelledby="portfolioDropdownLabel portfolioDropdownText"
-            >
-                <span id="portfolioDropdownText">
-                    <?= $selectedPortfolios === []
-                        ? 'Portfolio auswählen'
-                        : htmlspecialchars(count($selectedPortfolios) . ' Portfolio(s) ausgewählt') ?>
-                </span>
-                <span aria-hidden="true">▾</span>
-            </button>
-            <div class="portfolio-dropdown-menu" id="portfolioDropdownMenu" hidden>
-                <div class="portfolio-dropdown-actions">
-                    <button type="button" class="button-link" id="selectAllPortfoliosBtn">Alle auswählen</button>
-                    <button type="button" class="button-link" id="selectNoPortfoliosBtn">Alle abwählen</button>
-                </div>
-                <div class="portfolio-dropdown-options" role="group" aria-labelledby="portfolioDropdownLabel">
-                    <?php foreach ($portfolios as $portfolio): $portfolioId = (int)($portfolio['id'] ?? 0); ?>
-                        <label class="portfolio-dropdown-option">
-                            <input type="checkbox" name="portfolioIds[]" value="<?= $portfolioId ?>" <?= in_array($portfolioId, $selectedPortfolioIds, true) ? 'checked' : '' ?>>
-                            <span><?= htmlspecialchars((string)($portfolio['name'] ?? 'Unbenanntes Portfolio')) ?></span>
-                        </label>
-                    <?php endforeach; ?>
-                </div>
+<form method="get" action="portfolio-dashboard.php" class="control-card">
+    <div class="field">
+        <label for="portfolioId">Portfolio auswählen</label>
+
+        <select name="portfolioId" id="portfolioId">
+            <option value="">-- Portfolio wählen --</option>
+
+            <?php foreach ($portfolios as $portfolio): ?>
+                <option
+                    value="<?= htmlspecialchars((string)$portfolio['id']) ?>"
+                    <?= ((int)($portfolio['id'] ?? 0) === $selectedPortfolioId) ? 'selected' : '' ?>
+                >
+                    <?= htmlspecialchars($portfolio['name'] ?? 'Unbenanntes Portfolio') ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+
+    <div class="field">
+        <label for="reportDate">Stichtag</label>
+        <input
+            type="date"
+            id="reportDate"
+            name="reportDate"
+            value="<?= htmlspecialchars($reportDateInput) ?>"
+        >
+    </div>
+
+    <button type="submit">Projekte anzeigen</button>
+</form>
+
+<?php if ($reportDateError): ?>
+    <p class="message message-warning"><?= htmlspecialchars($reportDateError) ?></p>
+<?php endif; ?>
+
+<?php if ($selectedPortfolio): ?>
+
+<section class="card">
+    <h2>Ausgewähltes Portfolio: <?= htmlspecialchars($selectedPortfolio['name'] ?? '-') ?></h2>
+
+    <div class="portfolio-meta">
+        <div class="meta-item">
+            <span class="meta-label">Portfolio-ID</span>
+            <span class="meta-value"><?= htmlspecialchars((string)($selectedPortfolio['id'] ?? '-')) ?></span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Zeitraum</span>
+            <span class="meta-value">
+                <?= htmlspecialchars($selectedPortfolio['dateFrom'] ?? '-') ?>
+                bis
+                <?= htmlspecialchars($selectedPortfolio['dateTo'] ?? '-') ?>
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Stichtag</span>
+            <span class="meta-value"><?= htmlspecialchars($reportDate->format('Y-m-d')) ?></span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Projekte</span>
+            <span class="meta-value"><?= count($selectedPortfolioProjects) ?> / <?= count($portfolioProjects) ?> ausgewählt</span>
+        </div>
+    </div>
+</section>
+
+<section class="project-card">
+    <h3>Projekte auswählen</h3>
+
+    <form method="get" action="portfolio-dashboard.php">
+        <input type="hidden" name="portfolioId" value="<?= htmlspecialchars((string)($selectedPortfolio['id'] ?? '')) ?>">
+        <input type="hidden" name="reportDate" value="<?= htmlspecialchars($reportDate->format('Y-m-d')) ?>">
+        <input type="hidden" name="analysisStarted" value="1">
+
+        <?php if (count($portfolioProjects) === 0): ?>
+            <p class="message message-info">Dieses Portfolio enthält keine Projekte.</p>
+        <?php else: ?>
+            <div class="actions-card actions-inline">
+                <button type="button" id="selectAllBtn" class="button-secondary">Alle auswählen</button>
+                <button type="button" id="selectNoneBtn" class="button-secondary">Alle abwählen</button>
+            </div>
+
+            <div class="project-list">
+                <?php foreach ($portfolioProjects as $project): ?>
+                    <?php $projectId = (int)($project['id'] ?? 0); ?>
+                    <label class="project-option">
+                        <input
+                            type="checkbox"
+                            name="projectIds[]"
+                            value="<?= htmlspecialchars((string)$projectId) ?>"
+                            <?= in_array($projectId, $selectedProjectIds, true) ? 'checked' : '' ?>
+                        >
+                        <span>
+                            <span class="project-title"><?= htmlspecialchars((string)($project['name'] ?? 'Unbenanntes Projekt')) ?></span>
+                            <span class="project-number"><?= htmlspecialchars((string)($project['number'] ?? '-')) ?></span>
+                        </span>
+                    </label>
+                <?php endforeach; ?>
             </div>
         </div>
         <div class="field compact-field">
@@ -586,141 +899,272 @@ function exportPortfolioReport(
                                 </div>
                             <?php endforeach; ?>
                         </div>
-                    </article>
-                </div>
-
-                <article class="chart-card visualization-spacing">
-                    <h4>Prognostizierte Abweichungen</h4>
-                    <p class="chart-note forecast-note">Lineare Schätzung; Projekte ohne belastbare Prognose werden mit „nicht verfügbar“ angezeigt.</p>
-                    <div class="bar-list">
-                        <?php foreach ($portfolioProjectAnalyses as $project): ?>
-                            <?php $delay = max(0, (int)($project['forecast']['delayDays'] ?? 0)); ?>
-                            <?php $effortDeviation = max(0.0, (float)($project['forecast']['estimatedEffortDeviation'] ?? 0)); ?>
-                            <div class="bar-row forecast-row">
-                                <div class="bar-label"><strong><?= htmlspecialchars((string)$project['number']) ?></strong><span><?= htmlspecialchars((string)$project['name']) ?></span></div>
-                                <?php if (empty($project['forecast']['available'])): ?>
-                                    <span class="bar-value">Nicht verfügbar</span>
-                                <?php else: ?>
-                                    <div class="forecast-pair">
-                                        <div><span class="forecast-caption">Terminabweichung</span><div class="single-bar"><div class="bar-track"><span class="bar-fill bar-risk" style="width: <?= barWidth((float)$delay, (float)$maxForecastDelay) ?>%"></span></div><span class="bar-value"><?= $delay ?> Tage</span></div></div>
-                                        <div><span class="forecast-caption">Aufwandsabweichung</span><div class="single-bar"><div class="bar-track"><span class="bar-fill bar-warning" style="width: <?= barWidth($effortDeviation, $maxForecastEffortDeviation) ?>%"></span></div><span class="bar-value"><?= htmlspecialchars(formatDecimal($effortDeviation)) ?></span></div></div>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
                     </div>
-                </article>
-            </section>
+                <?php endforeach; ?>
+            </div>
+        </article>
+    </div>
+</section>
 
-            <section class="card">
-                <h3>Zusammenfassungen aus dem aktuellen Datenstand</h3>
-                <p class="message message-info">Diese gekürzten Zusammenfassungen sind unabhängig von der KI verfügbar. Die KI-Auswertung darunter kann sie zusätzlich verdichten.</p>
-                <div class="table-scroll"><table>
-                    <thead><tr><th>Projekt</th><th>Gegenstand – Zusammenfassung</th><th>Status – Zusammenfassung</th><th>Prognose</th></tr></thead>
-                    <tbody><?php foreach ($portfolioProjectAnalyses as $project): ?><tr>
-                        <td><?= htmlspecialchars((string)($project['number'] ?? '-')) ?> – <?= htmlspecialchars((string)($project['name'] ?? '-')) ?></td>
-                        <td><?= htmlspecialchars((string)$project['subjectSummary']) ?></td>
-                        <td><?= htmlspecialchars((string)$project['statusSummary']) ?></td>
-                        <td><?= htmlspecialchars((string)$project['forecastText']) ?></td>
-                    </tr><?php endforeach; ?></tbody>
-                </table></div>
-            </section>
+<h3>Statusampel-Zusammenfassung</h3>
+<p class="message message-info">Die eigene Ampel wird aus Meilensteinen, offenen To-dos und der Fortschrittsabweichung berechnet. Die BlueAnt-Ampel wird nur dann angezeigt, wenn die API für das Projekt einen echten Ampelwert liefert; in den aktuellen Live-Daten ist das nicht zuverlässig der Fall.</p>
 
-            <section class="ai-section">
-                <h3>KI-Management-Auswertung</h3>
-                <?php if (!$runAi): ?>
-                    <form method="post" class="prompt-form">
-                        <?php renderPortfolioHiddenInputs($selectedPortfolioIds); renderReportDateHiddenInput($reportDate); renderProjectHiddenInputs($selectedProjectIds); ?>
-                        <input type="hidden" name="runAi" value="1">
-                        <label for="aiPrompt">Verwendeter KI-Prompt</label>
-                        <textarea id="aiPrompt" name="aiPrompt" rows="12"><?= htmlspecialchars($activeAiPrompt) ?></textarea>
-                        <button type="submit" class="button-ai">KI-Auswertung starten</button>
-                    </form>
-                <?php elseif ($aiError): ?>
-                    <p class="message message-danger">KI-Auswertung nicht verfügbar: <?= htmlspecialchars($aiError) ?></p>
-                <?php elseif ($aiReport): ?>
-                    <h4>Management Summary</h4><p><?= nl2br(htmlspecialchars((string)$aiReport['management_summary'])) ?></p>
-                    <h4>Portfolio-Status</h4><p><?= nl2br(htmlspecialchars((string)$aiReport['portfolio_status'])) ?></p>
-                    <h4>Gegenstandsüberblick</h4><p><?= nl2br(htmlspecialchars((string)$aiReport['subject_overview'])) ?></p>
-                    <h4>Statusüberblick</h4><p><?= nl2br(htmlspecialchars((string)$aiReport['status_overview'])) ?></p>
-                    <h4>Kritische Auffälligkeiten</h4><?php renderList($aiReport['critical_findings'] ?? []); ?>
-                    <h4>Empfohlene Maßnahmen</h4><?php renderList($aiReport['recommended_actions'] ?? []); ?>
-                    <div class="table-scroll"><table>
-                        <thead><tr><th>Projekt</th><th>Gegenstand</th><th>Status</th><th>Prognose</th><th>Risiko</th></tr></thead>
-                        <tbody><?php foreach ($aiReport['project_summaries'] ?? [] as $summary): ?><tr>
-                            <td><?= htmlspecialchars((string)$summary['project_name']) ?></td>
-                            <td><?= htmlspecialchars((string)$summary['subject_summary']) ?></td>
-                            <td><?= htmlspecialchars((string)$summary['status_summary']) ?></td>
-                            <td><?= htmlspecialchars((string)$summary['forecast_summary']) ?></td>
-                            <td><?= htmlspecialchars((string)$summary['risk_note']) ?></td>
-                        </tr><?php endforeach; ?></tbody>
-                    </table></div>
-                <?php endif; ?>
-            </section>
+<table>
+    <thead>
+        <tr>
+            <th>Statusampel</th>
+            <th>Anzahl (Blue Ant, wenn verfügbar)</th>
+            <th>Anzahl (Unsere Berechnung)</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php foreach ($blueAntTrafficLightCounts as $status => $count): ?>
+            <tr>
+                <td><?= htmlspecialchars($status) ?></td>
+                <td><?= htmlspecialchars((string)$count) ?></td>
+                <td>
+                    <?= htmlspecialchars((string)($eigeneTrafficLightCounts[$status] ?? 0)) ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+<h3>Projektstatus-Zusammenfassung</h3>
 
-            <section class="card">
-                <h3>Statusampel- und Projektstatus-Überblick</h3>
-                <p class="chart-note">Statusampel: <?= htmlspecialchars((string)$config['traffic_light_field_name']) ?>. Kritische Fortschrittsgrenze: <?= htmlspecialchars((string)abs((float)$config['critical_progress_deviation'])) ?> Prozentpunkte hinter Plan.</p>
-                <div class="overview-columns">
-                    <table><thead><tr><th>Statusampel</th><th>Projekte</th></tr></thead><tbody><?php foreach ($trafficLightCounts as $label => $count): ?><tr><td><?php renderTrafficLight((string)$label); ?></td><td><?= $count ?></td></tr><?php endforeach; ?></tbody></table>
-                    <table><thead><tr><th>Projektstatus</th><th>Projekte</th></tr></thead><tbody><?php foreach ($projectStatusCounts as $label => $count): ?><tr><td><?= htmlspecialchars($label) ?></td><td><?= $count ?></td></tr><?php endforeach; ?></tbody></table>
-                    <table><tbody><tr><th>Meilensteine gesamt</th><td><?= $milestoneSummary['total'] ?></td></tr><tr><th>Offen</th><td><?= $milestoneSummary['open'] ?></td></tr><tr><th>Erledigt</th><td><?= $milestoneSummary['completed'] ?></td></tr><tr><th>Überfällig</th><td><?= $milestoneSummary['overdue'] ?></td></tr></tbody></table>
-                </div>
-            </section>
+<table>
+    <thead>
+        <tr>
+            <th>Status-ID und Name</th>
+            <th>Anzahl Projekte</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php foreach ($projectStatusCounts as $statusLabel => $count): ?>
+            <tr>
+                <td><?= htmlspecialchars($statusLabel) ?></td>
+                <td><?= htmlspecialchars((string)$count) ?></td>
+            </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+<h3>Meilenstein-Zusammenfassung</h3>
 
-            <section class="card">
-                <h3>Kritische Projekte</h3>
-                <?php if ($criticalProjects === []): ?><p>Keine kritischen Projekte nach den angezeigten Kriterien.</p><?php else: ?>
-                    <div class="table-scroll"><table><thead><tr><th>Projekt</th><th>Ampel</th><th>Fortschritt-Abweichung</th><th>Überfällige Meilensteine</th><th>Gründe</th></tr></thead><tbody>
-                    <?php foreach ($criticalProjects as $project): ?><tr><td><?= htmlspecialchars((string)$project['name']) ?></td><td><?php renderTrafficLight((string)$project['gesamtstatus']); ?></td><td><?= htmlspecialchars((string)$project['abweichungFortschritt']) ?> %</td><td><?= (int)$project['milestonesOverdue'] ?></td><td><?php renderList($project['criticalReasons']); ?></td></tr><?php endforeach; ?>
-                    </tbody></table></div>
-                <?php endif; ?>
-            </section>
+<table>
+    <tbody>
+        <tr>
+            <th>Meilensteine gesamt</th>
+            <td><?= htmlspecialchars((string)$milestoneSummary['total']) ?></td>
+        </tr>
+        <tr>
+            <th>Offene Meilensteine</th>
+            <td><?= htmlspecialchars((string)$milestoneSummary['open']) ?></td>
+        </tr>
+        <tr>
+            <th>Erledigte Meilensteine</th>
+            <td><?= htmlspecialchars((string)$milestoneSummary['completed']) ?></td>
+        </tr>
+        <tr>
+            <th>Überfällige Meilensteine</th>
+            <td><?= htmlspecialchars((string)$milestoneSummary['overdue']) ?></td>
+        </tr>
+    </tbody>
+</table>
 
-            <section class="card">
-                <h3>Projektdetails</h3>
-                <div class="table-scroll"><table><thead><tr>
-                    <th>Projekt</th><th>Portfolios</th><th>Status</th><th>Ampel</th><th>Aufwand Plan/Ist</th><th>Fortschritt Plan/Ist</th><th>Meilensteine gesamt/offen/überfällig</th><th>Gegenstand</th><th>Statustext</th><th>Kritisch</th>
-                </tr></thead><tbody><?php foreach ($portfolioProjectAnalyses as $project): ?><tr>
-                    <td><?= htmlspecialchars((string)$project['number']) ?> – <?= htmlspecialchars((string)$project['name']) ?></td>
-                    <td><?= htmlspecialchars(implode(', ', $project['portfolioNames'])) ?></td>
-                    <td><?= htmlspecialchars((string)$project['statusLabel']) ?></td><td><?php renderTrafficLight((string)$project['gesamtstatus']); ?></td>
-                    <td><?= htmlspecialchars((string)$project['planAufwand']) ?> / <?= htmlspecialchars((string)$project['istAufwand']) ?></td>
-                    <td><?= htmlspecialchars((string)$project['planFortschritt']) ?> % / <?= htmlspecialchars((string)$project['istFortschritt']) ?> %</td>
-                    <td><?= (int)$project['milestonesTotal'] ?> / <?= (int)$project['milestonesOpen'] ?> / <?= (int)$project['milestonesOverdue'] ?></td>
-                    <td><?= htmlspecialchars((string)($project['subjectMemo'] ?: 'Keine Angabe')) ?></td>
-                    <td><?= htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe')) ?></td>
-                    <td><?= !empty($project['isCritical']) ? 'Ja' : 'Nein' ?></td>
-                </tr><?php endforeach; ?></tbody></table></div>
-            </section>
-        <?php endif; ?>
-    <?php elseif ($selectedPortfolioIds !== []): ?>
-        <p class="message message-danger">Die ausgewählten Portfolios wurden nicht gefunden.</p>
-    <?php else: ?>
-        <p class="message message-info">Bitte wähle mindestens ein Portfolio aus.</p>
-    <?php endif; ?>
-</main>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const portfolioControl = document.getElementById('portfolioMultiselect');
-    const portfolioTrigger = document.getElementById('portfolioDropdownTrigger');
-    const portfolioMenu = document.getElementById('portfolioDropdownMenu');
-    const portfolioText = document.getElementById('portfolioDropdownText');
-    const portfolioBoxes = portfolioControl
-        ? Array.from(portfolioControl.querySelectorAll('input[name="portfolioIds[]"]'))
-        : [];
+<h3>Kritische Projekte</h3>
 
-    const updatePortfolioText = () => {
-        const selected = portfolioBoxes.filter(box => box.checked);
-        if (!portfolioText) return;
-        if (selected.length === 0) {
-            portfolioText.textContent = 'Portfolio auswählen';
-        } else if (selected.length === 1) {
-            portfolioText.textContent = selected[0].nextElementSibling?.textContent?.trim() || '1 Portfolio ausgewählt';
-        } else {
-            portfolioText.textContent = selected.length + ' Portfolios ausgewählt';
-        }
-    };
+<?php if (count($criticalProjects) === 0): ?>
+    <p>Keine kritischen Projekte nach den aktuellen Kriterien gefunden.</p>
+<?php else: ?>
+    <table>
+        <thead>
+            <tr>
+                <th>Projekt</th>
+                <th>Projektstatus</th>
+                <th>Statusampel</th>
+                <th>EIGENE AMPEL</th> 
+                <th>Fortschritt-Abweichung</th>
+                <th>Überfällige Meilensteine</th>
+                <th>Gesamtrisiko</th>
+                <th>Gründe</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($criticalProjects as $project): ?>
+                <tr>
+                    <td>
+                        <?= htmlspecialchars((string)($project['number'] ?? '-')) ?>
+                        -
+                        <?= htmlspecialchars((string)($project['name'] ?? '-')) ?>
+                    </td>
+                    <td><?= htmlspecialchars((string)($project['statusLabel'] ?? '-')) ?></td>
+                    <td><?= htmlspecialchars((string)($project['gesamtstatus'] ?? 'Keine Angabe')) ?></td>
+
+                    <?php
+                        $eigeneFarbe = $project['eigeneAmpel'] ?? 'GRAU';
+                        $cssKlasse = ($eigeneFarbe === 'GRAU') ? 'status-unknown' : getTrafficLightClass($eigeneFarbe);
+                    ?>
+                    <td class="<?= $cssKlasse ?>">
+                        <strong>
+                            <?= $eigeneFarbe === 'Rot' ? '🔴 ' : '' ?>
+                            <?= $eigeneFarbe === 'Gelb' ? '🟡 ' : '' ?>
+                            <?= $eigeneFarbe === 'Grün' ? '🟢 ' : '' ?>
+                            <?= htmlspecialchars($eigeneFarbe) ?>
+                        </strong>
+                        <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                            <?= htmlspecialchars((string)($project['eigeneAmpelBegruendung'] ?? '')) ?>
+                        </span>
+                    </td>
+
+                    <td><?= htmlspecialchars((string)($project['abweichungFortschritt'] ?? 0)) ?> %</td>
+                    <td><?= htmlspecialchars((string)($project['milestonesOverdue'] ?? 0)) ?></td>
+                    <td><?= htmlspecialchars((string)($project['riskAssessment'] ?: 'Keine Angabe')) ?></td>
+                    <td>
+                        <?php if (!empty($project['criticalReasons'])): ?>
+                            <ul>
+                                <?php foreach ($project['criticalReasons'] as $reason): ?>
+                                    <li><?= htmlspecialchars($reason) ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php else: ?>
+                            -
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+<?php endif; ?>
+    <details class="collapsible-table">
+        <summary>Projekte dieses Portfolios</summary>
+
+<style>
+    /* 1. Wir zwingen die Tabelle dazu, die Spaltenbreiten strikt zu respektieren */
+    table {
+        table-layout: fixed !important;
+        width: 100% !important;
+        min-width: 1200px !important; /* Erhöhe diesen Wert, falls es immer noch quetscht */
+    }
+
+    /* 2. Jetzt greifen die Breiten für die Status-Zellen garantiert */
+    th.col-status-text, 
+    td.col-status-text {
+        width: 360px !important;
+        min-width: 360px !important;
+        max-width: 420px !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+    }
+</style>
+
+<table style="table-layout: fixed !important; width: 100%;">
+    <colgroup>
+        <col span="18">
+        <col class="col-status-text" width="520">
+        <col span="2">
+    </colgroup>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Projektnummer</th>
+            <th>Projektname</th>
+            <th>Projektstatus</th>
+            <th>Plan-Aufwand</th>
+            <th>Ist-Aufwand</th>
+            <th>Abweichung</th>
+            <th>Plan-Fortschritt</th>
+            <th>Ist-Fortschritt</th>
+            <th>Fortschritt-Abweichung</th>
+            <th>Prognose Mehraufwand</th>
+            <th>Prognose (Aufwand/Zeitplan)</th>
+            <th>Meilensteine gesamt</th>
+            <th>Meilensteine offen</th>
+            <th>Meilensteine erledigt</th>
+            <th>Meilensteine überfällig</th>
+            <th>BlueAnt-Ampel</th>
+            <th>Eigene Ampel</th>
+            <th style="width: 520px !important; min-width: 520px !important; max-width: 520px !important;">Status-Text</th>
+            <th>Kritisch?</th>
+            <th>Kritische Gründe</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php foreach ($portfolioProjectAnalyses as $project): ?>
+          <tr>
+              <td><?= htmlspecialchars((string)($project['id'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['number'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['name'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['statusLabel'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['planAufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['istAufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['abweichungAufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['planFortschritt'] ?? 0)) ?> %</td>
+              <td><?= htmlspecialchars((string)($project['istFortschritt'] ?? 0)) ?> %</td>
+              <td><?= htmlspecialchars((string)($project['abweichungFortschritt'] ?? 0)) ?> %</td>
+              <td><?= htmlspecialchars((string)($project['prognoseMehraufwand'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['forecastText'] ?? '-')) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesTotal'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesOpen'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesCompleted'] ?? 0)) ?></td>
+              <td><?= htmlspecialchars((string)($project['milestonesOverdue'] ?? 0)) ?></td>
+              
+              <td>
+                  <?php if (!empty($project['hasBlueAntTrafficLight'])): ?>
+                      <strong><?= htmlspecialchars((string)($project['blueAntTrafficLight'] ?? 'Keine Angabe')) ?></strong>
+                      <?php if (($project['blueAntTrafficLightReason'] ?? '') !== ''): ?>
+                          <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                              <?= htmlspecialchars((string)$project['blueAntTrafficLightReason']) ?>
+                          </span>
+                      <?php endif; ?>
+                  <?php else: ?>
+                      <span class="status-unknown">Nicht verfügbar</span>
+                  <?php endif; ?>
+              </td>
+              
+              <?php 
+                  $eigeneFarbe = $project['eigeneAmpel'] ?? 'GRAU'; 
+                  $cssKlasse = ($eigeneFarbe === 'GRAU') ? 'status-unknown' : getTrafficLightClass($eigeneFarbe);
+              ?>
+              <td class="<?= $cssKlasse ?>">
+                  <strong>
+                      <?= $eigeneFarbe === 'Rot' ? '🔴 ' : '' ?>
+                      <?= $eigeneFarbe === 'Gelb' ? '🟡 ' : '' ?>
+                      <?= $eigeneFarbe === 'Grün' ? '🟢 ' : '' ?>
+                      <?= htmlspecialchars($eigeneFarbe) ?>
+                  </strong>
+                  <span style="display: block; font-size: 10px; color: #555; font-weight: normal; margin-top: 3px;">
+                      <?= htmlspecialchars((string)($project['eigeneAmpelBegruendung'] ?? '')) ?>
+                  </span>
+              </td>
+
+              <!-- HIER: Deine TD-Zelle hat die Klasse bereits, das passt! -->
+<!-- Ersetze dein altes TD mit diesem hier: -->
+            <td class="col-status-text" style="width: 520px !important; min-width: 520px !important; max-width: 520px !important; white-space: normal !important; word-break: break-word !important; overflow-wrap: anywhere;">
+            <?= nl2br(htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe'))) ?>
+            </td>     
+                     <td><?= !empty($project['isCritical']) ? 'Ja' : 'Nein' ?></td>
+            <td>
+                <?php if (!empty($project['criticalReasons'])): ?>
+                 <ul>
+                    <?php foreach ($project['criticalReasons'] as $reason): ?>
+                     <li><?= htmlspecialchars($reason) ?></li>
+                    <?php endforeach; ?>
+                 </ul>
+                 <?php else: ?>
+                    -
+                 <?php endif; ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+
+<?php endif; ?>
+
+<?php elseif ($selectedPortfolioId): ?>
+
+    <p class="message message-danger">Das ausgewählte Portfolio wurde nicht gefunden.</p>
+
+<?php else: ?>
 
     const setPortfolioMenuOpen = (open) => {
         if (!portfolioMenu || !portfolioTrigger) return;
@@ -763,7 +1207,32 @@ document.addEventListener('DOMContentLoaded', function () {
         updateCounter();
     }
 
+</main>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const selectNoneBtn = document.getElementById('selectNoneBtn');
+    
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.querySelectorAll('input[name="projectIds[]"]').forEach(checkbox => {
+                checkbox.checked = true;
+            });
+        });
+    }
+    
+    if (selectNoneBtn) {
+        selectNoneBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.querySelectorAll('input[name="projectIds[]"]').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+        });
+    }
 });
 </script>
+
 </body>
 </html>

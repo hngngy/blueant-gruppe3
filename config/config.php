@@ -84,6 +84,33 @@ function envFloat(string $name, float $default): float
     return (float)$value;
 }
 
+function envPrompt(string $name, string $default = ''): string
+{
+    $value = envValue($name);
+
+    if ($value === '') {
+        return $default;
+    }
+
+    // Versuche mehrere Pfad-Varianten
+    $paths = [
+        $value,  // absolut oder relativ vom aktuellen Working Directory
+        __DIR__ . '/../' . $value,  // relativ vom Project Root
+    ];
+
+    foreach ($paths as $path) {
+        if (file_exists($path) && is_readable($path)) {
+            $content = file_get_contents($path);
+            if ($content !== false) {
+                return $content;
+            }
+        }
+    }
+
+    // Fallback: direkt als String verwenden
+    return $value;
+}
+
 loadEnvFile(__DIR__ . '/../.env');
 
 return [
