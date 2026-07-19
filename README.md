@@ -58,7 +58,15 @@ docker compose up --build
 ```
 
 Falls die lokale `.env` noch `gemini-api-key=...` enthält, wird dieser Wert aus Kompatibilitätsgründen ebenfalls gelesen. Empfohlen ist `GEMINI_API_KEY=...`.
-Die Prompts liegen fest in `config/prompts.php`. Für reproduzierbare Ergebnisse werden Temperatur `0` und ein fester Seed verwendet.
+Für reproduzierbare Ergebnisse werden Temperatur `0` und ein fester Seed verwendet.
+
+### Prompt und KI-Auswertung im Code
+
+- Der Standardprompt liegt in `config/prompts.php` unter dem Schlüssel `portfolio_management_summary`.
+- Das sichtbare Promptkästchen, der Button `KI-Auswertung starten` und die Ausgabe der KI-Ergebnisse befinden sich in `public/portfolio-dashboard.php` im Abschnitt `KI-Management-Auswertung`.
+- `public/portfolio-dashboard.php` übernimmt einen im Promptkästchen bearbeiteten Text nur für den unmittelbar folgenden KI-Aufruf. Die Datei `config/prompts.php` wird dadurch nicht verändert.
+- `src/PortfolioAiAnalyzer.php` bereitet die ausgewählten Portfolio- und Projektdaten für die KI auf.
+- `src/GeminiClient.php` kombiniert Prompt und Eingabedaten und sendet die HTTP-Anfrage an Gemini.
 
 ## Start mit Docker
 
@@ -69,8 +77,10 @@ docker compose up --build
 Danach im Browser öffnen:
 
 ```text
-http://localhost:8000/portfolio-dashboard.php
+http://localhost:8000
 ```
+
+Die Startseite leitet automatisch auf `/portfolio-dashboard.php` weiter.
 
 Stoppen:
 
@@ -90,7 +100,7 @@ php -S localhost:8000 -t public
 Danach im Browser öffnen:
 
 ```text
-http://localhost:8000/portfolio-dashboard.php
+http://localhost:8000
 ```
 
 ## Test-Endpunkte
@@ -133,6 +143,7 @@ src/GeminiClient.php           Client für Gemini-KI-Auswertung
 src/PortfolioAiAnalyzer.php    Normalisierung und Prompt-Aufruf für Portfolio-Reports
 src/PortfolioAnalysis.php      Testbare Fachlogik für Texte, Meilensteine, Prognosen und Kritikalität
 public/portfolio-dashboard.php Dashboard und Auswertungslogik
+public/index.php               Weiterleitung der Startseite zum Dashboard
 public/styles.css              Modernes Dashboard-Styling ohne Frontend-Abhängigkeiten
 public/api-test.php            Einfacher API-Test-Endpunkt
 public/kpis-test.php           Test für KPI-Beschreibungen
@@ -166,13 +177,17 @@ docker-compose.yml             Lokale Docker-Ausfuehrung
 - Kritikalitätsprüfung anhand Statusampel, Fortschrittsabweichung, Meilensteinen und Statustext
 - Vollständige CSV- und Text-Exporte einschließlich Gegenstand, Status, Prognose und Kritikalitätsgründen
 
-## Fachliche Konfiguration
+## Fachliche Standardwerte
+
+Die folgenden Werte sind als Standardwerte in `config/config.php` hinterlegt und müssen deshalb nicht in `.env.example` stehen. Falls eine andere Blue-Ant-Instanz andere Feld-IDs oder Grenzwerte verwendet, können sie optional in der lokalen `.env` überschrieben werden:
 
 ```env
 BLUEANT_TRAFFIC_LIGHT_FIELD_ID=832814142
 BLUEANT_TRAFFIC_LIGHT_FIELD_NAME=Status Gesamt
 CRITICAL_PROGRESS_DEVIATION=-20
 ```
+
+Die Feld-ID bestimmt, aus welchem individuellen Blue-Ant-Feld die Statusampel gelesen wird. Der Feldname ist die Beschriftung im Dashboard. Mit `CRITICAL_PROGRESS_DEVIATION=-20` gilt ein Projekt als auffällig, sobald sein Ist-Fortschritt mindestens 20 Prozentpunkte hinter dem Plan liegt.
 
 Der Stichtag ist frei wählbar und wird für Meilensteinbewertung, Prognose, KI-Kontext und Export verwendet. Die Blue-Ant-KPI-API liefert jedoch keine frei wählbaren historischen KPI-Snapshots: Plan-/Ist-Aufwand und Plan-/Ist-Fortschritt entsprechen deshalb weiterhin den beim Abruf gelieferten KPI-Werten und werden nicht rückwirkend für den gewählten Tag rekonstruiert.
 

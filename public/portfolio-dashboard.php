@@ -677,9 +677,12 @@ function exportPortfolioReport(
                 <?php endif; ?>
             </section>
 
-            <section class="card">
-                <h3>Projektdetails</h3>
-                <div class="table-scroll"><table><thead><tr>
+            <details class="card project-details-card">
+                <summary class="project-details-summary">
+                    <span>Projektdetails</span>
+                    <span class="project-details-count"><?= count($portfolioProjectAnalyses) ?> <?= count($portfolioProjectAnalyses) === 1 ? 'Projekt' : 'Projekte' ?></span>
+                </summary>
+                <div class="project-details-content table-scroll"><table><thead><tr>
                     <th>Projekt</th><th>Portfolios</th><th>Status</th><th>Ampel</th><th>Aufwand Plan/Ist</th><th>Fortschritt Plan/Ist</th><th>Meilensteine gesamt/offen/überfällig</th><th>Gegenstand</th><th>Statustext</th><th>Kritisch</th>
                 </tr></thead><tbody><?php foreach ($portfolioProjectAnalyses as $project): ?><tr>
                     <td><?= htmlspecialchars((string)$project['number']) ?> – <?= htmlspecialchars((string)$project['name']) ?></td>
@@ -692,7 +695,7 @@ function exportPortfolioReport(
                     <td><?= htmlspecialchars((string)($project['statusMemo'] ?: 'Keine Angabe')) ?></td>
                     <td><?= !empty($project['isCritical']) ? 'Ja' : 'Nein' ?></td>
                 </tr><?php endforeach; ?></tbody></table></div>
-            </section>
+            </details>
         <?php endif; ?>
     <?php elseif ($selectedPortfolioIds !== []): ?>
         <p class="message message-danger">Die ausgewählten Portfolios wurden nicht gefunden.</p>
