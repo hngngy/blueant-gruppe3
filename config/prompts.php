@@ -1,6 +1,7 @@
 <?php
 
-$defaultPrompt = <<<'PROMPT'
+return [
+    'portfolio_management_summary' => <<<'PROMPT'
 Du bist ein deutschsprachiger PMO-Analyst.
 Erstelle aus den gelieferten Portfolio- und Projektdaten eine reproduzierbare Management Summary.
 
@@ -39,11 +40,5 @@ JSON-Schema:
     }
   ]
 }
-PROMPT;
-
-return [
-    'portfolio_management_summary' => envPrompt(
-        'PROMPT_PORTFOLIO_MANAGEMENT_SUMMARY',
-        $defaultPrompt
-    ),
+PROMPT,
 ];
