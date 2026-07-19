@@ -172,22 +172,10 @@ docker-compose.yml             Lokale Docker-Ausfuehrung
 - Bulk-Actions zum Auswählen oder Abwählen aller angezeigten Projekte mit live aktualisiertem Zähler
 - Korrekte Trennung der Blue-Ant-Memofelder `subjectMemo` (Gegenstand), `statusMemo` (Status) und `noteMemo` (Notiz)
 - Getrennte Zusammenfassungen für Gegenstand und Status pro Projekt sowie portfolioübergreifende KI-Überblicke
-- Konfigurierbare individuelle Statusampel (`BLUEANT_TRAFFIC_LIGHT_FIELD_ID`)
+- Auswertung der individuellen Blue-Ant-Statusampel
 - Transparente Termin- und Aufwandsprognose, die ausdrücklich als lineare Schätzung gekennzeichnet wird
 - Kritikalitätsprüfung anhand Statusampel, Fortschrittsabweichung, Meilensteinen und Statustext
 - Vollständige CSV- und Text-Exporte einschließlich Gegenstand, Status, Prognose und Kritikalitätsgründen
-
-## Fachliche Standardwerte
-
-Die folgenden Werte sind als Standardwerte in `config/config.php` hinterlegt und müssen deshalb nicht in `.env.example` stehen. Falls eine andere Blue-Ant-Instanz andere Feld-IDs oder Grenzwerte verwendet, können sie optional in der lokalen `.env` überschrieben werden:
-
-```env
-BLUEANT_TRAFFIC_LIGHT_FIELD_ID=832814142
-BLUEANT_TRAFFIC_LIGHT_FIELD_NAME=Status Gesamt
-CRITICAL_PROGRESS_DEVIATION=-20
-```
-
-Die Feld-ID bestimmt, aus welchem individuellen Blue-Ant-Feld die Statusampel gelesen wird. Der Feldname ist die Beschriftung im Dashboard. Mit `CRITICAL_PROGRESS_DEVIATION=-20` gilt ein Projekt als auffällig, sobald sein Ist-Fortschritt mindestens 20 Prozentpunkte hinter dem Plan liegt.
 
 Der Stichtag ist frei wählbar und wird für Meilensteinbewertung, Prognose, KI-Kontext und Export verwendet. Die Blue-Ant-KPI-API liefert jedoch keine frei wählbaren historischen KPI-Snapshots: Plan-/Ist-Aufwand und Plan-/Ist-Fortschritt entsprechen deshalb weiterhin den beim Abruf gelieferten KPI-Werten und werden nicht rückwirkend für den gewählten Tag rekonstruiert.
 
